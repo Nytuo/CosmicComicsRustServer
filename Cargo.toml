@@ -1,5 +1,5 @@
 [package]
-name = "CosmicComicsRustServer"
+name = "cosmic_comics_rust_server"
 version = "0.1.0"
 edition = "2024"
 
@@ -32,3 +32,4 @@ headless_chrome = { version = "1.0.17", features = [
 pdfium-render = "0.8"
 mockito = "1.7.0"
 tokio-test = "0.4.4"
+tempfile = "3.5.0"

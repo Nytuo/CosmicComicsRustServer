@@ -37,6 +37,12 @@ impl AppGlobalVariables {
             opened_db: HashMap::new(),
         }
     }
+    pub fn default() -> Self {
+        AppGlobalVariables {
+            progress_status: HashMap::new(),
+            opened_db: HashMap::new(),
+        }
+    }
     pub fn get_progress_status(
         &self,
         key: &str,

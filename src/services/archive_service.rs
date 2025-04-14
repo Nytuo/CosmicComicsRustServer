@@ -5,10 +5,11 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     os::unix::fs::PermissionsExt,
-    path::{Path},
+    path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
+use tempfile::tempdir;
 use tokio::sync::Mutex;
 use unrar::Archive;
 use zip::ZipArchive;
