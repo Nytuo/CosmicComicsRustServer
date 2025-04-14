@@ -3,3 +3,13 @@
 *.code-workspace
 
 .idea/
+
+migrate.js
+
+.DS_Store
+
+.env
+
+serverconfig.json
+
+profiles/

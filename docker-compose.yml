@@ -1,0 +1,18 @@
+version: "3.0"
+services:
+  cosmic_comics_backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cosmic_comics_backend
+    command: npm run serv
+    volumes:
+      - ./lib:/library
+      - ./config-backend:/config
+    ports:
+      - 4696:4696
+    restart: unless-stopped
+
+networks:
+    default:
+        driver: bridge

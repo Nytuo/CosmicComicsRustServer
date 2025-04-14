@@ -1,8 +1,173 @@
 use anyhow::{Result, anyhow};
 use chrono::Utc;
 use md5;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use urlencoding::encode;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Url {
+    pub r#type: String,
+    pub url: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Image {
+    pub path: String,
+    pub extension: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ResourceList<T> {
+    pub available: u32,
+    pub returned: u32,
+    pub collectionURI: String,
+    pub items: Vec<T>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TextObject {
+    pub r#type: String,
+    pub language: String,
+    pub text: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ComicDate {
+    pub r#type: String,
+    pub date: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ComicPrice {
+    pub r#type: String,
+    pub price: f32,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ComicSummary {
+    pub resourceURI: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SeriesSummary {
+    pub resourceURI: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EventSummary {
+    pub resourceURI: String,
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Character {
+    pub id: u32,
+    pub name: String,
+    pub description: String,
+    pub modified: String,
+    pub resourceURI: String,
+    pub urls: Vec<Url>,
+    pub thumbnail: Image,
+    pub comics: ResourceList<ComicSummary>,
+    pub stories: ResourceList<ComicSummary>,
+    pub events: ResourceList<ComicSummary>,
+    pub series: ResourceList<SeriesSummary>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Comic {
+    pub id: u32,
+    pub digitalId: u32,
+    pub title: String,
+    pub issueNumber: f32,
+    pub variantDescription: String,
+    pub description: Option<String>,
+    pub modified: String,
+    pub isbn: String,
+    pub upc: String,
+    pub diamondCode: String,
+    pub ean: String,
+    pub issn: String,
+    pub format: String,
+    pub pageCount: u32,
+    pub textObjects: Vec<TextObject>,
+    pub resourceURI: String,
+    pub urls: Vec<Url>,
+    pub series: SeriesSummary,
+    pub variants: Vec<ComicSummary>,
+    pub collections: Vec<ComicSummary>,
+    pub collectedIssues: Vec<ComicSummary>,
+    pub dates: Vec<ComicDate>,
+    pub prices: Vec<ComicPrice>,
+    pub thumbnail: Image,
+    pub images: Vec<Image>,
+    pub creators: ResourceList<SeriesSummary>,
+    pub characters: ResourceList<SeriesSummary>,
+    pub stories: ResourceList<SeriesSummary>,
+    pub events: ResourceList<SeriesSummary>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Creator {
+    pub id: u32,
+    pub firstName: Option<String>,
+    pub middleName: Option<String>,
+    pub lastName: Option<String>,
+    pub suffix: Option<String>,
+    pub fullName: String,
+    pub modified: String,
+    pub resourceURI: String,
+    pub urls: Vec<Url>,
+    pub thumbnail: Option<Image>,
+    pub series: ResourceList<SeriesSummary>,
+    pub stories: ResourceList<ComicSummary>,
+    pub comics: ResourceList<ComicSummary>,
+    pub events: ResourceList<EventSummary>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Event {
+    pub id: u32,
+    pub title: String,
+    pub description: Option<String>,
+    pub resourceURI: String,
+    pub urls: Vec<Url>,
+    pub modified: String,
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub thumbnail: Option<Image>,
+    pub comics: ResourceList<ComicSummary>,
+    pub stories: ResourceList<ComicSummary>,
+    pub series: ResourceList<SeriesSummary>,
+    pub characters: ResourceList<SeriesSummary>,
+    pub creators: ResourceList<SeriesSummary>,
+    pub next: Option<EventSummary>,
+    pub previous: Option<EventSummary>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Series {
+    pub id: u32,
+    pub title: String,
+    pub description: Option<String>,
+    pub resourceURI: String,
+    pub urls: Vec<Url>,
+    pub startYear: u32,
+    pub endYear: u32,
+    pub rating: Option<String>,
+    pub modified: String,
+    pub thumbnail: Option<Image>,
+    pub comics: ResourceList<ComicSummary>,
+    pub stories: ResourceList<ComicSummary>,
+    pub events: ResourceList<EventSummary>,
+    pub characters: ResourceList<SeriesSummary>,
+    pub creators: ResourceList<SeriesSummary>,
+    pub next: Option<SeriesSummary>,
+    pub previous: Option<SeriesSummary>,
+}
 
 fn recover_marvel_api_link(
     what: &str,
@@ -258,7 +423,7 @@ pub async fn get_marvel_api_comics_by_id(
     id: &str,
     marvel_private_key: &str,
     marvel_public_key: &str,
-) -> Result<Value> {
+) -> Result<Comic> {
     let url = recover_marvel_api_link(
         "comics",
         id,
@@ -271,14 +436,18 @@ pub async fn get_marvel_api_comics_by_id(
     );
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    println!("{:#?}", data);
-    Ok(data)
+    if let Some(comic) = data["data"]["results"].as_array().and_then(|arr| arr.first()) {
+        let comic: Comic = serde_json::from_value(comic.clone())?;
+        println!("{:#?}", comic);
+        return Ok(comic);
+    }
+    Err(anyhow!("Comic not found or invalid response format"))
 }
 pub async fn get_marvel_api_series_by_id(
     id: &str,
     marvel_private_key: &str,
     marvel_public_key: &str,
-) -> Result<Value> {
+) -> Result<Series> {
     let base_url = "https://gateway.marvel.com:443/v1/public/series";
     let url = format!(
         "{}?id={}{}",
@@ -291,12 +460,16 @@ pub async fn get_marvel_api_series_by_id(
 
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    println!("{:#?}", data);
-    Ok(data)
+    if let Some(series) = data["data"]["results"].as_array().and_then(|arr| arr.first()) {
+        let series: Series = serde_json::from_value(series.clone())?;
+        println!("{:#?}", series);
+        return Ok(series);
+    }
+    Err(anyhow!("Series not found or invalid response format"))
 }
 pub async fn get_marvel_api_search(
     name: &str,
-    date: Option<&str>,
+    date: Option<String>,
     marvel_private_key: &str,
     marvel_public_key: &str,
 ) -> Result<Value> {

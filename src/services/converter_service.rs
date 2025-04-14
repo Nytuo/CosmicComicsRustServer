@@ -34,11 +34,13 @@ pub async fn convert_all_images_in_directory(
                     let file_name = path.file_name().unwrap().to_str().unwrap();
                     let output_path = output_dir.join(format!("{}.webp", file_name));
                     convert_to_webp(path.to_str().unwrap(), output_path.to_str().unwrap())?;
+                    let col_vec = vec!["URLCover".to_string()];
+                    let val_vec = vec![output_path.to_str().unwrap().to_string()];
                     update_db(
                         &db_pool,
                         "noedit",
-                        Vec::from(["URLCover"]),
-                        Vec::from([output_path.to_str().unwrap()]),
+                        col_vec,
+                        val_vec,
                         "Books",
                         "ID_book",
                         file_name,

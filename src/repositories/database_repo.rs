@@ -1,5 +1,5 @@
 use sqlx::sqlite::SqlitePool;
-use sqlx::{Executor, query};
+use sqlx::{Column, Executor, Row, query};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -8,6 +8,11 @@ pub async fn make_db(profile_owner: &str, base_path: &str) -> Result<(), sqlx::E
     let db_path = format!("{}/profiles/{}/CosmicComics.db", base_path, profile_owner);
     let db_dir = Path::new(&db_path).parent().unwrap();
     fs::create_dir_all(db_dir).expect("Failed to create database directory");
+    fs::write(
+        format!("{}/profiles/{}/CosmicComics.db", base_path, profile_owner),
+        "",
+    )
+    .expect("Failed to create database file");
     let pool = SqlitePool::connect(&format!("sqlite://{}", db_path)).await?;
     let mut conn = pool.acquire().await?;
     conn.execute(
@@ -202,8 +207,8 @@ pub async fn get_db(
 pub async fn update_db(
     db_pool: &SqlitePool,
     update_type: &str,
-    columns: Vec<&str>,
-    values: Vec<&str>,
+    columns: Vec<String>,
+    values: Vec<String>,
     table: &str,
     condition_column: &str,
     condition_value: &str,
@@ -237,10 +242,14 @@ pub async fn update_db(
 pub async fn insert_into_db(
     db_pool: &SqlitePool,
     table: &str,
-    columns: Vec<&str>,
-    values: Vec<&str>,
+    columns: Option<Vec<String>>,
+    values: Vec<String>,
 ) -> Result<(), sqlx::Error> {
-    let column_names = columns.join(", ");
+    let column_names = if let Some(cols) = columns {
+        format!("({})", cols.join(", "))
+    } else {
+        String::new()
+    };
     let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
     let insert_query = format!(
         "INSERT OR IGNORE INTO {} {} VALUES ({});",
@@ -252,5 +261,82 @@ pub async fn insert_into_db(
         query_builder = query_builder.bind(value);
     }
     query_builder.execute(db_pool).await?;
+    Ok(())
+}
+
+pub async fn select_from_db(
+    db_pool: &SqlitePool,
+    table: &str,
+    columns: Vec<String>,
+    condition_column: Option<Vec<&str>>,
+    condition_value: Option<Vec<&str>>,
+    condition_separator: Option<&str>,
+) -> Result<Vec<HashMap<String, String>>, sqlx::Error> {
+    let column_names = if columns.is_empty() {
+        "*"
+    } else {
+        &*columns.join(", ")
+    };
+    let mut query_str = format!("SELECT {} FROM {}", column_names, table);
+    if let (Some(cols), Some(vals), Some(separator)) =
+        (condition_column, condition_value, condition_separator)
+    {
+        let conditions: Vec<String> = cols
+            .iter()
+            .zip(vals.iter())
+            .map(|(col, val)| format!("{} = '{}'", col, val))
+            .collect();
+        query_str.push_str(&format!(
+            " WHERE {}",
+            conditions.join(&format!(" {} ", separator))
+        ));
+    }
+    println!("Executing query: {}", query_str);
+    let rows = query(&query_str).fetch_all(db_pool).await?;
+    let mut results = Vec::new();
+    for row in rows {
+        let mut row_map = HashMap::new();
+        for (i, column) in row.columns().iter().enumerate() {
+            row_map.insert(column.name().to_string(), row.get::<String, _>(i));
+        }
+        results.push(row_map);
+    }
+    Ok(results)
+}
+
+pub async fn select_from_db_with_options(
+    db_pool: &SqlitePool,
+    option: &str,
+) -> Result<Vec<HashMap<String, String>>, sqlx::Error> {
+    let mut query_str = format!("SELECT {};", option);
+    println!("Executing query: {}", query_str);
+    let rows = query(&query_str).fetch_all(db_pool).await?;
+    let mut results = Vec::new();
+    for row in rows {
+        let mut row_map = HashMap::new();
+        for (i, column) in row.columns().iter().enumerate() {
+            row_map.insert(column.name().to_string(), row.get::<String, _>(i));
+        }
+        results.push(row_map);
+    }
+    Ok(results)
+}
+
+pub async fn delete_from_db(
+    db_pool: &SqlitePool,
+    table: &str,
+    condition_column: &str,
+    condition_value: &str,
+    option: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    let delete_query = format!(
+        "DELETE FROM {} WHERE {} = '{}' {};",
+        table,
+        condition_column,
+        condition_value,
+        option.unwrap_or("?")
+    );
+    println!("Executing query: {}", delete_query);
+    query(&delete_query).execute(db_pool).await?;
     Ok(())
 }

@@ -1,8 +1,11 @@
 use std::{collections::HashMap, env, fs, path::PathBuf, sync::Arc};
-
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use crate::routes_manager::create_router;
 use serde_json::{Value, json};
 use sqlx::sqlite::SqlitePool;
+use tokio::signal;
+use tokio_cron_scheduler::{Job, JobScheduler};
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
 use tracing_subscriber::{self};
@@ -16,6 +19,7 @@ mod utils;
 
 pub struct AppConfig {
     pub base_path: String,
+    pub version: String,
 }
 
 pub struct ApiTokens {
@@ -115,7 +119,7 @@ fn get_data_path() -> PathBuf {
 }
 
 fn setup_cosmic_comics_temp(base_path: &str) {
-    let cosmic_comics_temp = PathBuf::from(base_path);
+    let cosmic_comics_temp = PathBuf::from(base_path.clone());
 
     fs::create_dir_all(&cosmic_comics_temp).unwrap_or_else(|err| {
         eprintln!("Failed to create directory: {:?}", err);
@@ -136,7 +140,7 @@ fn setup_cosmic_comics_temp(base_path: &str) {
 }
 
 fn setup_server_config(cosmic_comics_temp: &str, dev_mode: bool) {
-    let server_config_path = PathBuf::from(cosmic_comics_temp).join("serverconfig.json");
+    let server_config_path = PathBuf::from(cosmic_comics_temp.clone()).join("serverconfig.json");
 
     if !server_config_path.exists() {
         let default_config = json!({
@@ -175,6 +179,54 @@ fn setup_server_config(cosmic_comics_temp: &str, dev_mode: bool) {
     }
 }
 
+async fn handle_sigint() {
+    println!("Removing ZIPs to DL");
+
+    let todl_path = "./public/TODL";
+    let uploads_path = format!("{}/uploads", std::env::var("CosmicComicsTemp").unwrap_or_else(|_| ".".to_string()));
+
+    if Path::new(todl_path).exists() {
+        if let Err(err) = fs::remove_dir_all(todl_path) {
+            eprintln!("Failed to remove directory {}: {:?}", todl_path, err);
+        }
+    }
+
+    if Path::new(&uploads_path).exists() {
+        if let Err(err) = fs::remove_dir_all(&uploads_path) {
+            eprintln!("Failed to remove directory {}: {:?}", uploads_path, err);
+        }
+    }
+}
+
+async fn sigint() {
+        let ctrl_c = async {
+            signal::ctrl_c()
+                .await
+                .expect("failed to install Ctrl+C handler");
+        };
+        #[cfg(unix)]
+        let terminate = async {
+            signal::unix::signal(signal::unix::SignalKind::terminate())
+                .expect("failed to install signal handler")
+                .recv()
+                .await;
+        };
+
+        #[cfg(not(unix))]
+        let terminate = std::future::pending::<()>();
+
+        tokio::select! {
+        _ = ctrl_c => {
+            println!("Received Ctrl+C, shutting down...");
+            handle_sigint().await;
+            },
+        _ = terminate => {
+            println!("Received SIGTERM, shutting down...");
+            handle_sigint().await;
+            },
+    }
+}
+
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
@@ -188,6 +240,68 @@ async fn main() {
 
     setup_cosmic_comics_temp(&base_path);
     setup_server_config(&base_path, dev_mode == "true");
+    fs::create_dir_all(PathBuf::from(base_path.clone()).join("public").join("FirstImagesOfAll")).unwrap_or_else(|err| {
+        eprintln!("Failed to create directory: {:?}", err);
+    });
+    let mut permissions = fs::metadata(PathBuf::from(base_path.clone()).join("public").join("FirstImagesOfAll")).unwrap().permissions();
+    permissions.set_mode(0o777);
+    fs::set_permissions(PathBuf::from(base_path.clone()).join("public").join("FirstImagesOfAll"), permissions).unwrap_or_else(|err| {
+        eprintln!("Failed to set permissions: {:?}", err);
+    });
+    fs::create_dir_all(PathBuf::from(base_path.clone()).join("public").join("TODL")).unwrap_or_else(|err| {
+        eprintln!("Failed to create directory: {:?}", err);
+    });
+    fs::create_dir_all(PathBuf::from(base_path.clone()).join("public").join("uploads")).unwrap_or_else(|err| {
+        eprintln!("Failed to create directory: {:?}", err);
+    });
+    let scheduler = JobScheduler::new().await.unwrap();
+    let base_path_clone = base_path.clone();
+    let token_reset = Job::new_async("0 0 */2 * * *", move |_uuid, _l| {
+        let base_path = base_path_clone.clone();
+        Box::pin(async move {
+            let server_config_path = PathBuf::from(base_path.clone()).join("serverconfig.json");
+            if let Ok(config_content) = fs::read_to_string(&server_config_path) {
+                if let Ok(mut config_json) = serde_json::from_str::<Value>(&config_content) {
+                    if let Some(token_field) = config_json.get_mut("Token") {
+                        *token_field = json!({});
+                    }
+
+                    if let Err(err) = fs::write(
+                        &server_config_path,
+                        serde_json::to_string_pretty(&config_json).unwrap(),
+                    ) {
+                        eprintln!(
+                            "Failed to reset Token field in serverconfig.json: {:?}",
+                            err
+                        );
+                    }
+                } else {
+                    eprintln!("Failed to parse serverconfig.json");
+                }
+            } else {
+                eprintln!("Failed to read serverconfig.json");
+            }
+        })
+    })
+    .unwrap();
+
+    let base_path_clone1 = base_path.clone();
+    let zip_remover = Job::new_async("0 0 */2 * * *", move |_uuid, _l| {
+        let base_path = base_path_clone1.clone();
+        Box::pin(async move {
+            let public_path = PathBuf::from(base_path.clone()).join("public").join("TODL");
+            if public_path.exists() {
+                fs::remove_dir_all(&public_path).unwrap_or_else(|err| {
+                    eprintln!("Failed to remove directory: {:?}", err);
+                });
+            }
+        })
+    })
+    .unwrap();
+
+    scheduler.add(token_reset).await.unwrap();
+    scheduler.add(zip_remover).await.unwrap();
+    scheduler.start().await.unwrap();
 
     let marvel_public_key = std::env::var("MARVEL_PUBLIC_KEY").unwrap_or_else(|_| "".to_string());
     let marvel_private_key = std::env::var("MARVEL_PRIVATE_KEY").unwrap_or_else(|_| "".to_string());
@@ -195,8 +309,10 @@ async fn main() {
         std::env::var("GOOGLE_BOOKS_API_KEY").unwrap_or_else(|_| "".to_string());
     let open_library_api_key =
         std::env::var("OPEN_LIBRARY_API_KEY").unwrap_or_else(|_| "".to_string());
+    let version = env!("CARGO_PKG_VERSION").to_string();
     let app_state = Arc::new(tokio::sync::Mutex::new(AppConfig {
         base_path: base_path.clone(),
+        version: version.clone(),
     }));
 
     let api_tokens = Arc::new(tokio::sync::Mutex::new(ApiTokens {
@@ -220,7 +336,7 @@ async fn main() {
     let port = if dev_mode == "true" {
         3000
     } else {
-        let server_config_path = PathBuf::from(base_path).join("serverconfig.json");
+        let server_config_path = PathBuf::from(base_path.clone()).join("serverconfig.json");
         let config_content = fs::read_to_string(&server_config_path).unwrap();
         let config: Value = serde_json::from_str(&config_content).unwrap();
         config["port"].as_u64().unwrap_or(4696) as u16
@@ -232,5 +348,7 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(bind_url)
         .await
         .expect("Failed to bind TCP listener");
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(listener, app).with_graceful_shutdown(
+        sigint()
+    ).await.unwrap();
 }

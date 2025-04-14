@@ -9,6 +9,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use serde_json::Value;
 use tempfile::tempdir;
 use tokio::sync::Mutex;
 use unrar::Archive;
@@ -430,5 +431,50 @@ fn merge_pdfs(input_paths: Vec<&str>, output_path: &str) -> Result<(), Box<dyn s
     merged_doc.save_to_file(save_path)?;
 
     println!("Merged PDF saved to: {}", output_path);
+    Ok(())
+}
+
+
+pub async fn scrape_images_from_webpage(
+    url: &str,
+    output_dir: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let browser = Browser::new(
+        LaunchOptionsBuilder::default()
+            .headless(true)
+            .sandbox(false)
+            .build()
+            .unwrap(),
+    )?;
+    let tab = browser.new_tab()?;
+    tab.navigate_to(url)?;
+    tab.wait_until_navigated()?;
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    let elements = tab.find_elements("img")?;
+    let mut images = Vec::new();
+
+    for element in elements {
+        if let Ok(src) = element.call_js_fn("function() { return this.src; }", vec![], false) {
+            if let Some(Value::String(src_str)) = src.value {
+                images.push(src_str.to_string());
+            }
+        }
+    }
+
+    fs::create_dir_all(output_dir)?;
+    for (i, img_url) in images.iter().enumerate() {
+        let response = reqwest::get(img_url).await?;
+        if response.status().is_success() {
+            let mut file = fs::File::create(format!("{}/image_{}.jpg", output_dir, i))?;
+            let bytes = response.bytes().await?;
+            file.write_all(&bytes)?;
+        } else {
+            println!("Failed to download image: {}", img_url);
+        }
+    }
+
+    println!("Scraped {} images from {}", images.len(), url);
+    tab.close(true)?;
     Ok(())
 }
