@@ -39,3 +39,4 @@ rand = { version = "0.9.1", features = ["alloc"] }
 multipart = "0.18.0"
 multer = "3.0"
 futures-util = "0.3"
+httpmock = "0.7"

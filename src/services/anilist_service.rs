@@ -8,14 +8,20 @@ pub struct Media {
     pub id: i32,
     pub title: Title,
     pub status: Option<String>,
+    #[serde(rename = "startDate")]
     pub start_date: Option<Date>,
+    #[serde(rename = "endDate")]
     pub end_date: Option<Date>,
     pub description: Option<String>,
+    #[serde(rename = "meanScore")]
     pub mean_score: Option<i32>,
     pub genres: Option<Vec<String>>,
+    #[serde(rename = "coverImage")]
     pub cover_image: Option<Image>,
+    #[serde(rename = "bannerImage")]
     pub banner_image: Option<String>,
     pub trending: Option<i32>,
+    #[serde(rename = "siteUrl")]
     pub site_url: Option<String>,
     pub volumes: Option<i32>,
     pub chapters: Option<i32>,
@@ -506,10 +512,10 @@ pub async fn api_anilist_get_by_id(id: &str) -> Result<Option<Media>, reqwest::E
         response.staff.nodes = mod_staff_nodes;
     }
 
-
-
     if !media.characters.nodes.is_empty() {
-        let mod_character_nodes: Vec<CharacterNode> = media.characters.nodes
+        let mod_character_nodes: Vec<CharacterNode> = media
+            .characters
+            .nodes
             .iter()
             .map(|character| {
                 let mut new_character = serde_json::to_value(character).unwrap();
@@ -561,11 +567,30 @@ mod tests {
 
         let data = data.unwrap();
         assert_eq!(data.id, 30011);
-        assert!(data.title.romaji.is_some());
-        assert!(data.staff.nodes.is_empty());
-        assert!(data.characters.nodes.is_empty());
-        assert!(data.relations.nodes.is_empty());
+        assert!(data.id != 0);
+        assert!(
+            data.title.romaji.is_some()
+                || data.title.english.is_some()
+                || data.title.native.is_some()
+        );
+        assert!(data.status.is_some());
+        assert!(data.start_date.is_some());
+        assert!(data.end_date.is_some());
+        assert!(data.description.is_some());
+        assert!(data.mean_score.is_some());
+        assert!(data.genres.as_ref().map_or(false, |g| !g.is_empty()));
         assert!(data.cover_image.is_some());
+        assert!(data.banner_image.is_some());
+        assert!(data.trending.is_some());
+        assert!(data.site_url.is_some());
+        assert!(data.volumes.is_some());
+        assert!(data.chapters.is_some());
+        assert!(!data.staff.nodes.is_empty());
+        assert!(!data.staff.edges.is_empty());
+        assert!(!data.characters.nodes.is_empty());
+        assert!(!data.characters.edges.is_empty());
+        assert!(!data.relations.nodes.is_empty());
+        assert!(!data.relations.edges.is_empty());
     }
 
     #[tokio::test]
