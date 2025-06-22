@@ -5,7 +5,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: cosmic_comics_backend
-    command: npm run serv
     volumes:
       - ./lib:/library
       - ./config-backend:/config

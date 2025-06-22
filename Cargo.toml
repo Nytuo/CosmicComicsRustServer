@@ -3,6 +3,10 @@ name = "cosmic_comics_rust_server"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "cosmic_comics_rust_server"
+path = "src/main.rs"
+
 [dependencies]
 axum = { version= "0.8.4", features = ["multipart"] }
 axum-macros = "0.5.0"
