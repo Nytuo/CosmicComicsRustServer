@@ -4,8 +4,6 @@
 
 .idea/
 
-migrate.js
-
 .DS_Store
 
 .env

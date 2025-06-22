@@ -9,9 +9,10 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use futures::executor;
 use serde_json::Value;
 use tempfile::tempdir;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex};
 use unrar::Archive;
 use zip::ZipArchive;
 
@@ -20,8 +21,9 @@ pub async fn unzip_and_process(
     extract_dir: &str,
     ext: &str,
     token: String,
-    progress_status: Arc<Mutex<AppGlobalVariables>>,
-) -> Result<(), Box<dyn std::error::Error>> {
+    progress_status: &Arc<Mutex<AppGlobalVariables>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+{
     if Path::new(&extract_dir).exists() {
         fs::remove_dir_all(&extract_dir)?;
     }
@@ -48,7 +50,7 @@ pub async fn unzip_and_process(
                 zip_path,
                 extract_dir,
                 token.clone(),
-                progress_status.clone(),
+                progress_status,
             )
             .await?;
         }
@@ -59,7 +61,7 @@ pub async fn unzip_and_process(
                 zip_path,
                 extract_dir,
                 token.clone(),
-                progress_status.clone(),
+                progress_status,
             )
             .await?;
         }
@@ -77,20 +79,20 @@ pub async fn extract_first_image(
     extract_dir: String,
     extension: &str,
     file_name: &str,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match extension {
         "zip" | "cbz" | "7z" | "cb7" | "tar" | "cbt" => {
             extract_first_image_from_zip(zip_path, extract_dir, file_name)
         }
         "rar" | "cbr" => extract_first_image_from_rar(zip_path, extract_dir, file_name),
-        _ => Err(anyhow::anyhow!("Unsupported format: {}", extension)),
+        _ => Err(format!("Unsupported extension: {}", extension).into()),
     }
 }
 fn extract_first_image_from_zip<P: AsRef<Path>>(
     zip_path: P,
     extract_dir: P,
     file_name: &str,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let file = File::open(&zip_path)?;
     let mut archive = ZipArchive::new(file)?;
 
@@ -121,7 +123,7 @@ fn extract_first_image_from_rar<P: AsRef<Path>>(
     rar_path: P,
     extract_dir: P,
     file_name: &str,
-) -> Result<(), anyhow::Error> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut archive = Archive::new(rar_path.as_ref().to_str().unwrap()).open_for_processing()?;
 
     while let Some(header) = archive.read_header()? {
@@ -158,8 +160,8 @@ pub async fn extract_all_images_from_zip<P: AsRef<Path>>(
     zip_path: P,
     extract_dir: P,
     token: String,
-    progress_status: Arc<Mutex<AppGlobalVariables>>,
-) -> Result<(), anyhow::Error> {
+    progress_status: &Arc<Mutex<AppGlobalVariables>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut progress_status = progress_status.lock().await;
     let file = File::open(&zip_path)?;
     let mut archive = ZipArchive::new(file)?;
@@ -208,8 +210,8 @@ async fn extract_all_images_from_rar<P: AsRef<Path>>(
     rar_path: P,
     extract_dir: P,
     token: String,
-    progress_status: Arc<Mutex<AppGlobalVariables>>,
-) -> Result<(), anyhow::Error> {
+    progress_status: &Arc<Mutex<AppGlobalVariables>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut progress_status = progress_status.lock().await;
     let mut archive = Archive::new(rar_path.as_ref().to_str().unwrap()).open_for_processing()?;
     fs::create_dir_all(&extract_dir)?;
@@ -270,8 +272,8 @@ pub async fn extract_pdf_from_epub(
     epub_path: &str,
     extract_dir: &str,
     token: String,
-    progress_status: Arc<Mutex<AppGlobalVariables>>,
-) -> Result<(), anyhow::Error> {
+    progress_status: &Arc<Mutex<AppGlobalVariables>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let file = File::open(epub_path)?;
     let mut archive = ZipArchive::new(file)?;
     fs::create_dir_all(extract_dir)?;
@@ -366,7 +368,7 @@ pub async fn extract_pdf_from_epub(
         &output_pdf_path,
         extract_dir,
         token.clone(),
-        progress_status.clone(),
+        progress_status,
     )
     .await;
     fs::remove_file(output_pdf_path)?;
@@ -377,48 +379,58 @@ pub async fn convert_pdf_to_images(
     pdf_path: &str,
     output_dir: &str,
     token: String,
-    progress_status: Arc<Mutex<AppGlobalVariables>>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let pdfium = Pdfium::default();
-    let pdf_path = Path::new(pdf_path);
-    let doc = pdfium.load_pdf_from_file(pdf_path, None)?;
+    progress_status: &Arc<Mutex<AppGlobalVariables>>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let pdf_path = pdf_path.to_string();
+    let output_dir = output_dir.to_string();
+    let progress_status = Arc::clone(progress_status);
 
-    std::fs::create_dir_all(output_dir)?;
-    let total_pages = doc.pages().len();
+    tokio::task::spawn_blocking(move || {
+        let pdfium = Pdfium::default();
+        let pdf_path = Path::new(&pdf_path);
+        let doc = pdfium.load_pdf_from_file(pdf_path, None)?;
 
-    for (i, page) in doc.pages().iter().enumerate() {
-        let image = page
-            .render_with_config(
-                &PdfRenderConfig::new()
-                    .set_target_width(1200)
-                    .render_form_data(true),
-            )?
-            .as_image()
-            .into_rgb8();
+        std::fs::create_dir_all(&output_dir)?;
+        let total_pages = doc.pages().len();
 
-        let file_path = format!("{}/page_{}.webp", output_dir, i);
-        image.save_with_format(file_path, image::ImageFormat::WebP)?;
-        progress_status.lock().await.set_progress_status(
-            token.clone(),
+        for (i, page) in doc.pages().iter().enumerate() {
+            let image = page
+                .render_with_config(
+                    &PdfRenderConfig::new()
+                        .set_target_width(1200)
+                        .render_form_data(true),
+                )?
+                .as_image()
+                .into_rgb8();
+
+            let file_path = format!("{}/page_{}.webp", output_dir, i);
+            image.save_with_format(file_path, image::ImageFormat::WebP)?;
+
+            let mut progress_status = executor::block_on(progress_status.lock());
+            progress_status.set_progress_status(
+                token.clone(),
+                "unzip".to_string(),
+                "loading".to_string(),
+                ((i * 100) / total_pages as usize).to_string(),
+                format!("page_{}", i),
+            );
+        }
+
+        let mut progress_status = executor::block_on(progress_status.lock());
+        progress_status.set_progress_status(
+            token,
             "unzip".to_string(),
-            "loading".to_string(),
-            ((i * 100) / total_pages as usize).to_string(),
-            format!("page_{}", i),
+            "done".to_string(),
+            "100".to_string(),
+            "All pages rendered.".to_string(),
         );
-    }
 
-    progress_status.lock().await.set_progress_status(
-        token,
-        "unzip".to_string(),
-        "done".to_string(),
-        "100".to_string(),
-        "All pages rendered.".to_string(),
-    );
-
-    Ok(())
+        Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
+    })
+        .await?
 }
 
-fn merge_pdfs(input_paths: Vec<&str>, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn merge_pdfs(input_paths: Vec<&str>, output_path: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let pdfium = Pdfium::default();
     let mut merged_doc = pdfium.create_new_pdf()?;
 
@@ -438,7 +450,7 @@ fn merge_pdfs(input_paths: Vec<&str>, output_path: &str) -> Result<(), Box<dyn s
 pub async fn scrape_images_from_webpage(
     url: &str,
     output_dir: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let browser = Browser::new(
         LaunchOptionsBuilder::default()
             .headless(true)
