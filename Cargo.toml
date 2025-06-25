@@ -8,7 +8,7 @@ name = "CosmicComicsRustServer"
 path = "src/main.rs"
 
 [dependencies]
-axum = { version= "0.8.4", features = ["multipart"] }
+axum = { version = "0.8.4", features = ["multipart"] }
 axum-macros = "0.5.0"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -31,9 +31,7 @@ webp = "0.3.0"
 image = "0.25"
 zip = "2.6.1"
 walkdir = "2.4.0"
-headless_chrome = { version = "1.0.17", features = [
-    "fetch",
-]}
+headless_chrome = { version = "1.0.17", features = ["fetch"] }
 pdfium-render = "0.8"
 mockito = "1.7.0"
 tokio-test = "0.4.4"
@@ -47,3 +45,4 @@ futures-util = "0.3"
 httpmock = "0.7"
 futures = "0.3.31"
 tokio-util = "0.7.15"
+rust-embed = "8.7.2"

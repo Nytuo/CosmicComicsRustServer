@@ -4,6 +4,9 @@ use sqlx::sqlite::SqlitePool;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::{collections::HashMap, env, fs, path::PathBuf, sync::Arc};
+use std::fs::File;
+use std::io::Write;
+use rust_embed::RustEmbed;
 use tokio::signal;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tower::ServiceBuilder;
@@ -16,6 +19,10 @@ mod repositories;
 mod routes_manager;
 mod services;
 mod utils;
+
+#[derive(RustEmbed)]
+#[folder = "public/Images"]
+struct Asset;
 
 pub struct AppConfig {
     pub base_path: String,
@@ -269,6 +276,32 @@ async fn main() {
     fs::create_dir_all(PathBuf::from(base_path.clone()).join("profiles")).unwrap_or_else(|err| {
         eprintln!("Failed to create directory: {:?}", err);
     });
+
+    fs::create_dir_all(PathBuf::from(base_path.clone()) .join("public").join("Images")).unwrap_or_else(|err| {
+        eprintln!("Failed to create directory: {:?}", err);
+    });
+
+    for file in Asset::iter() {
+        println!("Extracting: {}", file);
+
+        if let Some(content) = Asset::get(&file) {
+            let out_path = Path::new(&base_path)
+                .join("public")
+                .join("Images")
+                .join(&*file);
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent).expect("Failed to create output directories");
+            }
+
+            let mut out_file = File::create(&out_path).expect("Failed to create output file");
+            out_file
+                .write_all(&content.data)
+                .expect("Failed to write file");
+
+            println!("Written to: {:?}", out_path);
+        }
+    }
+
     let scheduler = JobScheduler::new().await.unwrap();
     let base_path_clone = base_path.clone();
     let token_reset = Job::new_async("0 0 */2 * * *", move |_uuid, _l| {
