@@ -1,9 +1,9 @@
-use std::{collections::HashMap, env, fs, path::PathBuf, sync::Arc};
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 use crate::routes_manager::create_router;
 use serde_json::{Value, json};
 use sqlx::sqlite::SqlitePool;
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::{collections::HashMap, env, fs, path::PathBuf, sync::Arc};
 use tokio::signal;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tower::ServiceBuilder;
@@ -74,22 +74,8 @@ impl AppGlobalVariables {
 
 fn get_data_path() -> PathBuf {
     let is_portable = PathBuf::from("portable.txt").exists();
-    let is_electron = if is_portable {
-        if let Ok(content) = std::fs::read_to_string("portable.txt") {
-            content.trim() == "electron"
-        } else {
-            false
-        }
-    } else {
-        false
-    };
-
     if is_portable {
-        if is_electron {
-            PathBuf::from("../../..").join("CosmicData")
-        } else {
-            PathBuf::from("../..").join("CosmicData")
-        }
+        PathBuf::from("./..").join("CosmicData")
     } else {
         match env::consts::OS {
             "windows" => {
@@ -183,7 +169,10 @@ async fn handle_sigint() {
     println!("Removing ZIPs to DL");
 
     let todl_path = "./public/TODL";
-    let uploads_path = format!("{}/uploads", std::env::var("CosmicComicsTemp").unwrap_or_else(|_| ".".to_string()));
+    let uploads_path = format!(
+        "{}/uploads",
+        std::env::var("CosmicComicsTemp").unwrap_or_else(|_| ".".to_string())
+    );
 
     if Path::new(todl_path).exists() {
         if let Err(err) = fs::remove_dir_all(todl_path) {
@@ -199,23 +188,23 @@ async fn handle_sigint() {
 }
 
 async fn sigint() {
-        let ctrl_c = async {
-            signal::ctrl_c()
-                .await
-                .expect("failed to install Ctrl+C handler");
-        };
-        #[cfg(unix)]
-        let terminate = async {
-            signal::unix::signal(signal::unix::SignalKind::terminate())
-                .expect("failed to install signal handler")
-                .recv()
-                .await;
-        };
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
 
-        #[cfg(not(unix))]
-        let terminate = std::future::pending::<()>();
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
 
-        tokio::select! {
+    tokio::select! {
         _ = ctrl_c => {
             println!("Received Ctrl+C, shutting down...");
             handle_sigint().await;
@@ -240,18 +229,44 @@ async fn main() {
 
     setup_cosmic_comics_temp(&base_path);
     setup_server_config(&base_path, dev_mode == "true");
-    fs::create_dir_all(PathBuf::from(base_path.clone()).join("public").join("FirstImagesOfAll")).unwrap_or_else(|err| {
+    fs::create_dir_all(
+        PathBuf::from(base_path.clone())
+            .join("public")
+            .join("FirstImagesOfAll"),
+    )
+    .unwrap_or_else(|err| {
         eprintln!("Failed to create directory: {:?}", err);
     });
-    let mut permissions = fs::metadata(PathBuf::from(base_path.clone()).join("public").join("FirstImagesOfAll")).unwrap().permissions();
+    let mut permissions = fs::metadata(
+        PathBuf::from(base_path.clone())
+            .join("public")
+            .join("FirstImagesOfAll"),
+    )
+    .unwrap()
+    .permissions();
     permissions.set_mode(0o777);
-    fs::set_permissions(PathBuf::from(base_path.clone()).join("public").join("FirstImagesOfAll"), permissions).unwrap_or_else(|err| {
+    fs::set_permissions(
+        PathBuf::from(base_path.clone())
+            .join("public")
+            .join("FirstImagesOfAll"),
+        permissions,
+    )
+    .unwrap_or_else(|err| {
         eprintln!("Failed to set permissions: {:?}", err);
     });
-    fs::create_dir_all(PathBuf::from(base_path.clone()).join("public").join("TODL")).unwrap_or_else(|err| {
+    fs::create_dir_all(PathBuf::from(base_path.clone()).join("public").join("TODL"))
+        .unwrap_or_else(|err| {
+            eprintln!("Failed to create directory: {:?}", err);
+        });
+    fs::create_dir_all(
+        PathBuf::from(base_path.clone())
+            .join("public")
+            .join("uploads"),
+    )
+    .unwrap_or_else(|err| {
         eprintln!("Failed to create directory: {:?}", err);
     });
-    fs::create_dir_all(PathBuf::from(base_path.clone()).join("public").join("uploads")).unwrap_or_else(|err| {
+    fs::create_dir_all(PathBuf::from(base_path.clone()).join("profiles")).unwrap_or_else(|err| {
         eprintln!("Failed to create directory: {:?}", err);
     });
     let scheduler = JobScheduler::new().await.unwrap();
@@ -348,7 +363,8 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind(bind_url)
         .await
         .expect("Failed to bind TCP listener");
-    axum::serve(listener, app).with_graceful_shutdown(
-        sigint()
-    ).await.unwrap();
+    axum::serve(listener, app)
+        .with_graceful_shutdown(sigint())
+        .await
+        .unwrap();
 }
