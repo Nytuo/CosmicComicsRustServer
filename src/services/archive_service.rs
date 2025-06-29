@@ -11,7 +11,6 @@ use std::{
 };
 use futures::executor;
 use serde_json::Value;
-use tempfile::tempdir;
 use tokio::sync::{Mutex};
 use unrar::Archive;
 use zip::ZipArchive;

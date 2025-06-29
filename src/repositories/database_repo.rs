@@ -1,5 +1,5 @@
-use sqlx::sqlite::SqlitePool;
-use sqlx::{Column, Executor, Row, query};
+use sqlx::sqlite::{SqlitePool, SqliteValueRef};
+use sqlx::{Column, Executor, Row, query, ValueRef, TypeInfo};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
@@ -297,7 +297,20 @@ pub async fn select_from_db(
     for row in rows {
         let mut row_map = HashMap::new();
         for (i, column) in row.columns().iter().enumerate() {
-            row_map.insert(column.name().to_string(), row.get::<String, _>(i));
+            let raw_value = row.try_get_raw(i)?;
+            let value_str = if raw_value.is_null() {
+                "NULL".to_string()
+            } else {
+                match raw_value.type_info().name() {
+                    "INTEGER" => row.try_get::<i64, _>(i).map(|v| v.to_string()),
+                    "TEXT" => row.try_get::<String, _>(i),
+                    "BOOLEAN" => row.try_get::<bool, _>(i).map(|v| v.to_string()),
+                    "REAL" => row.try_get::<f64, _>(i).map(|v| v.to_string()),
+                    _ => Ok("<unsupported>".to_string()),
+                }.unwrap_or_else(|_| "<error>".to_string())
+            };
+
+            row_map.insert(column.name().to_string(), value_str);
         }
         results.push(row_map);
     }
