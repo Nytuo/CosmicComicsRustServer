@@ -1,6 +1,8 @@
 use crate::{AppGlobalVariables, utils::is_image_file};
+use futures::executor;
 use headless_chrome::{Browser, LaunchOptionsBuilder};
 use pdfium_render::prelude::*;
+use serde_json::Value;
 use std::{
     fs::{self, File},
     io::{self, Write},
@@ -9,9 +11,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use futures::executor;
-use serde_json::Value;
-use tokio::sync::{Mutex};
+use tokio::sync::Mutex;
 use unrar::Archive;
 use zip::ZipArchive;
 
@@ -21,8 +21,7 @@ pub async fn unzip_and_process(
     ext: &str,
     token: String,
     progress_status: &Arc<Mutex<AppGlobalVariables>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-{
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if Path::new(&extract_dir).exists() {
         fs::remove_dir_all(&extract_dir)?;
     }
@@ -45,24 +44,12 @@ pub async fn unzip_and_process(
 
         "pdf" => {
             println!("Processing PDF: {}", zip_path);
-            convert_pdf_to_images(
-                zip_path,
-                extract_dir,
-                token.clone(),
-                progress_status,
-            )
-            .await?;
+            convert_pdf_to_images(zip_path, extract_dir, token.clone(), progress_status).await?;
         }
 
         "epub" | "ebook" => {
             println!("Processing EPUB: {}", zip_path);
-            extract_pdf_from_epub(
-                zip_path,
-                extract_dir,
-                token.clone(),
-                progress_status,
-            )
-            .await?;
+            extract_pdf_from_epub(zip_path, extract_dir, token.clone(), progress_status).await?;
         }
 
         _ => {
@@ -387,6 +374,9 @@ pub async fn convert_pdf_to_images(
     tokio::task::spawn_blocking(move || {
         let pdfium = Pdfium::default();
         let pdf_path = Path::new(&pdf_path);
+        if !pdf_path.exists() {
+            return Err(format!("PDF file does not exist: {}", pdf_path.display()).into());
+        }
         let doc = pdfium.load_pdf_from_file(pdf_path, None)?;
 
         std::fs::create_dir_all(&output_dir)?;
@@ -426,10 +416,13 @@ pub async fn convert_pdf_to_images(
 
         Ok::<_, Box<dyn std::error::Error + Send + Sync>>(())
     })
-        .await?
+    .await?
 }
 
-fn merge_pdfs(input_paths: Vec<&str>, output_path: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+fn merge_pdfs(
+    input_paths: Vec<&str>,
+    output_path: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let pdfium = Pdfium::default();
     let mut merged_doc = pdfium.create_new_pdf()?;
 
@@ -444,7 +437,6 @@ fn merge_pdfs(input_paths: Vec<&str>, output_path: &str) -> Result<(), Box<dyn s
     println!("Merged PDF saved to: {}", output_path);
     Ok(())
 }
-
 
 pub async fn scrape_images_from_webpage(
     url: &str,

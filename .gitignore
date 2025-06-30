@@ -11,3 +11,5 @@
 serverconfig.json
 
 profiles/
+
+tarpaulin-report.html

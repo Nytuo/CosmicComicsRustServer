@@ -221,9 +221,9 @@ fn recover_marvel_api_link(
     )
 }
 fn generate_marvel_api_auth(marvel_private_key: &str, marvel_public_key: &str) -> String {
-    let ts = Utc::now().timestamp_millis().to_string();
+    let ts = Utc::now().timestamp().to_string();
 
-    let hash_input = format!("{}{}{}", ts, marvel_private_key, marvel_public_key);
+    let hash_input = format!("{}{}{}", ts, marvel_public_key, marvel_private_key);
     let hash = format!("{:x}", md5::compute(hash_input));
 
     format!("&ts={}&hash={}&apikey={}", ts, hash, marvel_public_key)
@@ -436,7 +436,10 @@ pub async fn get_marvel_api_comics_by_id(
     );
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    if let Some(comic) = data["data"]["results"].as_array().and_then(|arr| arr.first()) {
+    if let Some(comic) = data["data"]["results"]
+        .as_array()
+        .and_then(|arr| arr.first())
+    {
         let comic: Comic = serde_json::from_value(comic.clone())?;
         println!("{:#?}", comic);
         return Ok(comic);
@@ -460,7 +463,10 @@ pub async fn get_marvel_api_series_by_id(
 
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    if let Some(series) = data["data"]["results"].as_array().and_then(|arr| arr.first()) {
+    if let Some(series) = data["data"]["results"]
+        .as_array()
+        .and_then(|arr| arr.first())
+    {
         let series: Series = serde_json::from_value(series.clone())?;
         println!("{:#?}", series);
         return Ok(series);
