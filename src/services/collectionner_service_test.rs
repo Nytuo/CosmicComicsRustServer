@@ -50,12 +50,12 @@ mod tests {
                 .any(|v| v.as_str().unwrap().contains("subfolder"))
         );
     }
-    use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+    use sqlx::{Column, Row, SqlitePool, sqlite::SqlitePoolOptions};
     use std::env;
 
     use crate::services::collectionner_service::{
-        get_list_of_files_and_folders, get_list_of_folders, handle_marvel_book,
-        handle_marvel_series,
+        get_list_of_files_and_folders, get_list_of_folders, handle_anilist_series,
+        handle_marvel_book, handle_marvel_series,
     };
 
     /* #[tokio::test]
@@ -123,4 +123,50 @@ mod tests {
 
         assert!(result.is_ok());
     } */
+
+    #[tokio::test]
+    async fn test_handle_anilist_series_writes_to_db() {
+        let pool = SqlitePoolOptions::new().connect(":memory:").await.unwrap();
+
+        sqlx::query("CREATE TABLE IF NOT EXISTS Series (ID_Series TEXT PRIMARY KEY NOT NULL UNIQUE,title TEXT NOT NULL,note INTEGER,statut TEXT,start_date TEXT,end_date TEXT,description TEXT,Score INTEGER,genres TEXT,cover TEXT,BG TEXT,CHARACTERS TEXT,TRENDING INTEGER,STAFF TEXT,SOURCE TEXT,volumes INTEGER,chapters INTEGER,favorite BOOLEAN NOT NULL,PATH TEXT NOT NULL,lock BOOLEAN DEFAULT false NOT NULL);").execute(&pool).await.unwrap();
+
+        sqlx::query("INSERT INTO Series (ID_Series, title, note, statut, start_date, end_date, description, Score, genres, cover, BG, CHARACTERS, TRENDING, STAFF, SOURCE, volumes, chapters, favorite, PATH) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind("30042")
+    .bind("Test Title")
+    .bind(0)
+    .bind("ongoing")
+    .bind("2024-01-01")
+    .bind("2024-12-31")
+    .bind("Test description")
+    .bind(0)
+    .bind("action,adventure")
+    .bind("cover_url")
+    .bind("bg_url")
+    .bind("characters_json")
+    .bind(0)
+    .bind("staff_json")
+    .bind("original")
+    .bind(1)
+    .bind(10)
+    .bind(false)
+    .bind("series/path")
+    .execute(&pool)
+    .await
+    .unwrap();
+
+        let result = handle_anilist_series(&pool, "30042", 2, "dummy_token").await;
+        assert!(result.is_ok());
+
+        let row = sqlx::query("SELECT title, description FROM Series WHERE ID_Series = ?")
+            .bind("30042")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let title: String = row.get("title");
+        let description: String = row.get("description");
+
+        assert!(!title.is_empty());
+        assert!(!description.is_empty());
+    }
 }

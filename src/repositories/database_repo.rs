@@ -227,7 +227,10 @@ pub async fn update_db(
             condition_value
         );
         println!("Executing query: {}", update_query);
-        query(&update_query).execute(db_pool).await?;
+        if let Err(e) = query(&update_query).execute(db_pool).await {
+            eprintln!("Update query failed: {}", e);
+            return Err(e);
+        }
     } else {
         let update_query = format!(
             "UPDATE {} SET {} = '{}' WHERE {} = '{}';",
@@ -235,6 +238,7 @@ pub async fn update_db(
         );
         println!("Executing query: {}", update_query);
         query(&update_query).execute(db_pool).await?;
+        println!("Updated {} in {} table", condition_value, table);
     }
     Ok(())
 }

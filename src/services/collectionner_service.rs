@@ -109,12 +109,12 @@ pub async fn handle_anilist_series(pool: &SqlitePool, id: &str, provider: i32, t
     asso.insert("Score".to_string(), json!(result.mean_score));
     asso.insert("genres".to_string(), json!(result.genres));
     asso.insert("TRENDING".to_string(), json!(result.trending));
-    asso.insert("API_ID".to_string(), json!(provider));
-    
+
     let columns = asso.keys().cloned().collect::<Vec<String>>();
     let values = asso.values().cloned().map(|v| v.to_string()).collect::<Vec<String>>();
 
-    update_db(pool,"edit", columns, values, "Series", "PATH", &path).await
+    update_db(pool,"edit", columns, values, "Series", "PATH", &path).await;
+    Ok(())
 }
 
 pub async fn handle_openlibrary_book(pool: &SqlitePool, id: &str, provider: i32, token: &str) -> Result<(), sqlx::Error> {
