@@ -113,14 +113,14 @@ fn extract_first_image_from_rar<P: AsRef<Path>>(
     let mut archive = Archive::new(rar_path.as_ref().to_str().unwrap()).open_for_processing()?;
 
     while let Some(header) = archive.read_header()? {
-        let file_path = header.entry().filename.to_string_lossy().to_string();
+        let filename = header.entry().filename.to_string_lossy().to_string();
 
-        if header.entry().is_file() && is_image_file(&file_path) {
-            println!("Found image: {}", file_path);
+        if header.entry().is_file() && is_image_file(&filename) {
+            println!("Found image: {}", filename);
+            let extracted_file_path = extract_dir.as_ref().join(&*filename);
 
-            archive = header.extract_to(&extract_dir)?;
+            archive = header.extract_to(&extracted_file_path)?;
 
-            let extracted_file_path = extract_dir.as_ref().join(&*file_path);
             let renamed_path = extract_dir.as_ref().join(format!("{}.jpg", file_name));
 
             if extracted_file_path.exists() {
@@ -192,7 +192,7 @@ pub async fn extract_all_images_from_zip<P: AsRef<Path>>(
     Ok(())
 }
 
-async fn extract_all_images_from_rar<P: AsRef<Path>>(
+pub(crate) async fn extract_all_images_from_rar<P: AsRef<Path>>(
     rar_path: P,
     extract_dir: P,
     token: String,
@@ -218,7 +218,7 @@ async fn extract_all_images_from_rar<P: AsRef<Path>>(
 
         if header.entry().is_file() && is_image_file(&file_path) {
             let extracted_file_path = extract_dir.as_ref().join(&file_path);
-            archive = header.extract_to(&extract_dir)?;
+            archive = header.extract_to(&extracted_file_path)?;
 
             if extracted_file_path.exists() {
                 let renamed_path = extract_dir.as_ref().join(format!("{:05}.jpg", image_count));
