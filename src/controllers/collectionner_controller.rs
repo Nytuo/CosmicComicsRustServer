@@ -75,7 +75,8 @@ pub async fn fill_blank_images_controller(
 
     match crate::services::book_service::fill_blank_images(
         pool,
-        crate::utils::VALID_IMAGE_EXTENSION
+        crate::utils::VALID_IMAGE_EXTENSION,
+        Option::None
     )
         .await
     {

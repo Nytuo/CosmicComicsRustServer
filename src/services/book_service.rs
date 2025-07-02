@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::{fs, path};
 use std::os::unix::fs::PermissionsExt;
+use futures_util::future::ok;
 use sqlx::Row;
 use sqlx::SqlitePool;
+use tower::util::Optional;
 use crate::repositories::database_repo::update_db;
 
 pub async fn get_books_with_blank_covers(
@@ -26,11 +28,16 @@ pub async fn get_books_with_blank_covers(
 
 pub async fn fill_blank_images(
     db_pool: SqlitePool,
-    valid_image_extensions: &[&str]
+    valid_image_extensions: &[&str],
+    output_dir: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let result: Vec<String> = Vec::new();
 
-    let output_dir = format!("{}/public/FirstImagesOfAll", env!("CARGO_MANIFEST_DIR"));
+    let output_dir = if output_dir.is_some() {
+        output_dir.unwrap()
+    } else {
+        format!("{}/public/FirstImagesOfAll", env!("CARGO_MANIFEST_DIR"))
+    };
     let books = crate::services::book_service::get_books_with_blank_covers(db_pool.clone()).await?;
     for book in books {
         println!("Beginning fill_blank_images for: {}", book["NOM"]);
@@ -83,6 +90,7 @@ pub async fn fill_blank_images(
         }
     }
 
+    println!("Converting images in directory: {}", output_dir);
     crate::services::converter_service::convert_all_images_in_directory(
         output_dir.clone().as_str(),
         &output_dir,
@@ -90,6 +98,6 @@ pub async fn fill_blank_images(
         db_pool,
     )
         .await?;
-
+    println!("Finished fill_blank_images");
     Ok(())
 }
