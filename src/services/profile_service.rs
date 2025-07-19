@@ -283,7 +283,10 @@ pub async fn discover_profiles_service(
                 .into_string()
                 .map_err(|e| format!("Failed to convert file name to string: {:?}", e))?;
             let passcode_path = format!("{}/profiles/{}/passcode.txt", base_path, name);
-            let passcode_exists = Path::new(&passcode_path).exists();
+            let passcode_exists = Path::new(&passcode_path).exists()
+                && fs::read_to_string(&passcode_path)
+                    .map(|s| !s.trim().is_empty() && s.trim() != "_nopasswordisusedforthisaccount_")
+                    .unwrap_or(false);
             let pp_path = format!("{}/profiles/{}/pp.png", base_path, name);
             let pp_server_url = format!("{}://{}/profile/getPPBN/{}", protocol, host, name);
             let profile = json!({

@@ -1,18 +1,23 @@
-use std::sync::Arc;
-use axum::extract::{State};
-use axum::http::{HeaderMap, StatusCode};
+use crate::repositories::database_repo::get_db;
+use crate::routes_manager::AppState;
+use crate::services::collectionner_service::{
+    get_list_of_files_and_folders, get_list_of_folders, handle_anilist_series, handle_google_book,
+    handle_marvel_book, handle_marvel_series, handle_openlibrary_book,
+};
+use crate::services::googlebooks_service::search_gbapi_comics_by_name;
+use crate::services::marvel_service::{
+    get_marvel_api_characters, get_marvel_api_comics, get_marvel_api_creators,
+};
+use crate::services::openlibrary_service::{get_olapi_book, get_olapi_search};
+use crate::services::profile_service::resolve_token;
 use axum::Json;
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::Row;
-use crate::repositories::database_repo::get_db;
-use crate::routes_manager::AppState;
-use crate::services::collectionner_service::{get_list_of_files_and_folders, get_list_of_folders, handle_anilist_series, handle_google_book, handle_marvel_book, handle_marvel_series, handle_openlibrary_book};
-use crate::services::googlebooks_service::search_gbapi_comics_by_name;
-use crate::services::marvel_service::{get_marvel_api_characters, get_marvel_api_comics, get_marvel_api_creators};
-use crate::services::openlibrary_service::{get_olapi_book, get_olapi_search};
-use crate::services::profile_service::resolve_token;
+use std::sync::Arc;
 
 #[derive(Deserialize)]
 pub struct FillBlankImagePayload {
@@ -59,12 +64,17 @@ pub async fn fill_blank_images_controller(
     let base_path = config.base_path.clone();
     let token = payload.token.clone();
 
+    let resolved_token = match resolve_token(&token, &base_path) {
+        Some(t) => t,
+        None => return StatusCode::UNAUTHORIZED,
+    };
+
     let pool = match crate::repositories::database_repo::get_db(
-        &token,
+        &resolved_token,
         &base_path,
         global.opened_db.clone(),
     )
-        .await
+    .await
     {
         Ok(pool) => pool,
         Err(_) => {
@@ -76,9 +86,9 @@ pub async fn fill_blank_images_controller(
     match crate::services::book_service::fill_blank_images(
         pool,
         crate::utils::VALID_IMAGE_EXTENSION,
-        Option::None
+        Option::None,
     )
-        .await
+    .await
     {
         Ok(_) => {
             println!("Fill blank images completed successfully");
@@ -94,7 +104,7 @@ pub async fn fill_blank_images_controller(
 pub async fn insert_anilist_book(
     State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
     Json(payload): Json<InsertAnilistBookPayload>,
-)-> impl IntoResponse {
+) -> impl IntoResponse {
     let token = payload.token.clone();
     let path = payload.path.clone();
     let realname = payload.realname.clone();
@@ -113,7 +123,7 @@ pub async fn insert_anilist_book(
         &base_path,
         global.opened_db.clone(),
     )
-        .await
+    .await
     {
         Ok(pool) => pool,
         Err(_) => {
@@ -169,7 +179,11 @@ pub async fn insert_anilist_book(
         2,
         realname,
         path,
-        format!("Anilist_{}_{}", realname.replace(" ", "$"), series_name.replace(" ", "$"))
+        format!(
+            "Anilist_{}_{}",
+            realname.replace(" ", "$"),
+            series_name.replace(" ", "$")
+        )
     );
 
     match sqlx::query(&insert_query).execute(&pool).await {
@@ -186,12 +200,28 @@ pub async fn insert_anilist_book(
 
 pub async fn insert_marvel_book(
     State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
-    headers: HeaderMap
+    headers: HeaderMap,
 ) -> impl IntoResponse {
-    let token = headers.get("token").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
-    let realname = headers.get("realname").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
-    let date = headers.get("date").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
-    let path = headers.get("path").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
+    let token = headers
+        .get("token")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let realname = headers
+        .get("realname")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let date = headers
+        .get("date")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let path = headers
+        .get("path")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
 
     let state = state.lock().await;
     let base_path = state.config.lock().await.base_path.clone();
@@ -202,7 +232,7 @@ pub async fn insert_marvel_book(
         &base_path,
         global.opened_db.clone(),
     )
-        .await
+    .await
     {
         Ok(pool) => pool,
         Err(_) => {
@@ -214,7 +244,7 @@ pub async fn insert_marvel_book(
     let marvel_pub_api_key = state.creds.lock().await.marvel_public_key.clone();
     let marvel_priv_api_key = state.creds.lock().await.marvel_private_key.clone();
 
-    match get_marvel_api_comics(&realname, &date,&marvel_priv_api_key,&marvel_pub_api_key).await {
+    match get_marvel_api_comics(&realname, &date, &marvel_priv_api_key, &marvel_pub_api_key).await {
         Ok(cdata) => {
             let total = cdata["data"]["total"].as_u64().unwrap_or(0);
             if total > 0 {
@@ -257,12 +287,22 @@ pub async fn insert_marvel_book(
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
 
-                if let Ok(creators) = get_marvel_api_creators(comic["id"].as_str().unwrap(), Option::from("comics"), &*marvel_priv_api_key, &*marvel_pub_api_key).await {
+                if let Ok(creators) = get_marvel_api_creators(
+                    comic["id"].as_str().unwrap(),
+                    Option::from("comics"),
+                    &*marvel_priv_api_key,
+                    &*marvel_pub_api_key,
+                )
+                .await
+                {
                     for creator in creators["data"]["results"].as_array().unwrap_or(&vec![]) {
                         let creator_query = format!(
                             "INSERT INTO Creators VALUES ('{}_1', '{}', '{}', NULL, '{}');",
                             creator["id"].as_u64().unwrap_or(0),
-                            creator["fullName"].as_str().unwrap_or("").replace("'", "''"),
+                            creator["fullName"]
+                                .as_str()
+                                .unwrap_or("")
+                                .replace("'", "''"),
                             creator["thumbnail"].to_string(),
                             creator["urls"].to_string()
                         );
@@ -273,14 +313,24 @@ pub async fn insert_marvel_book(
                     }
                 }
 
-                if let Ok(characters) = get_marvel_api_characters(comic["id"].as_str().unwrap(), Option::from("comics"), &*marvel_priv_api_key, &*marvel_pub_api_key).await {
+                if let Ok(characters) = get_marvel_api_characters(
+                    comic["id"].as_str().unwrap(),
+                    Option::from("comics"),
+                    &*marvel_priv_api_key,
+                    &*marvel_pub_api_key,
+                )
+                .await
+                {
                     for character in characters["data"]["results"].as_array().unwrap_or(&vec![]) {
                         let character_query = format!(
                             "INSERT INTO Characters VALUES ('{}_1', '{}', '{}', '{}', '{}');",
                             character["id"].as_u64().unwrap_or(0),
                             character["name"].as_str().unwrap_or("").replace("'", "''"),
                             character["thumbnail"].to_string(),
-                            character["description"].as_str().unwrap_or("").replace("'", "''"),
+                            character["description"]
+                                .as_str()
+                                .unwrap_or("")
+                                .replace("'", "''"),
                             character["urls"].to_string()
                         );
 
@@ -293,9 +343,7 @@ pub async fn insert_marvel_book(
                 let random_id = format!("{}_1", rand::random::<u32>());
                 let default_query = format!(
                     "INSERT INTO Books VALUES ('{}', '1', '{}', NULL, 0, 0, 1, 0, 0, 0, '{}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false);",
-                    random_id,
-                    realname,
-                    path
+                    random_id, realname, path
                 );
 
                 if let Err(err) = sqlx::query(&default_query).execute(&pool).await {
@@ -305,7 +353,6 @@ pub async fn insert_marvel_book(
             }
             let response = serde_json::to_string(&cdata).unwrap_or_default();
             (StatusCode::OK, response).into_response()
-
         }
         Err(err) => {
             eprintln!("Error fetching Marvel API data: {}", err);
@@ -320,11 +367,23 @@ pub async fn insert_marvel_book(
 
 pub async fn insert_googlebooks_book(
     State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
-    headers: HeaderMap
+    headers: HeaderMap,
 ) -> impl IntoResponse {
-    let token = headers.get("token").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
-    let realname = headers.get("name").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
-    let path = headers.get("path").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
+    let token = headers
+        .get("token")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let realname = headers
+        .get("name")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let path = headers
+        .get("path")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
 
     let state = state.lock().await;
     let base_path = state.config.lock().await.base_path.clone();
@@ -335,7 +394,7 @@ pub async fn insert_googlebooks_book(
         &base_path,
         global.opened_db.clone(),
     )
-        .await
+    .await
     {
         Ok(pool) => pool,
         Err(_) => {
@@ -346,7 +405,7 @@ pub async fn insert_googlebooks_book(
 
     let google_books_api_key = state.creds.lock().await.google_books_api_key.clone();
 
-    match search_gbapi_comics_by_name(&realname,google_books_api_key).await {
+    match search_gbapi_comics_by_name(&realname, google_books_api_key).await {
         Ok(cdata) => {
             let total_items = cdata["totalItems"].as_u64().unwrap_or(0);
             if total_items > 0 {
@@ -363,7 +422,9 @@ pub async fn insert_googlebooks_book(
                 let print_type = book["volumeInfo"]["printType"].as_str().unwrap_or_default();
                 let page_count = book["volumeInfo"]["pageCount"].as_u64().unwrap_or(0);
                 let info_link = book["volumeInfo"]["infoLink"].to_string();
-                let authors = book["volumeInfo"]["authors"].as_array().unwrap_or(&vec![])
+                let authors = book["volumeInfo"]["authors"]
+                    .as_array()
+                    .unwrap_or(&vec![])
                     .iter()
                     .map(|a| a.as_str().unwrap_or("").to_string())
                     .collect::<Vec<String>>();
@@ -409,9 +470,7 @@ pub async fn insert_googlebooks_book(
                 let random_id = format!("{}_4", rand::random::<u32>());
                 let default_query = format!(
                     "INSERT INTO Books VALUES ('{}', '4', '{}', NULL, 0, 0, 1, 0, 0, 0, '{}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false);",
-                    random_id,
-                    realname,
-                    path
+                    random_id, realname, path
                 );
 
                 if let Err(err) = sqlx::query(&default_query).execute(&pool).await {
@@ -435,11 +494,23 @@ pub async fn insert_googlebooks_book(
 
 pub async fn insert_olib_book(
     State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
-    headers: HeaderMap
+    headers: HeaderMap,
 ) -> impl IntoResponse {
-    let token = headers.get("token").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
-    let realname = headers.get("name").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
-    let path = headers.get("path").and_then(|h| h.to_str().ok()).unwrap_or_default().to_string();
+    let token = headers
+        .get("token")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let realname = headers
+        .get("name")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    let path = headers
+        .get("path")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
 
     let state = state.lock().await;
     let base_path = state.config.lock().await.base_path.clone();
@@ -450,7 +521,7 @@ pub async fn insert_olib_book(
         &base_path,
         global.opened_db.clone(),
     )
-        .await
+    .await
     {
         Ok(pool) => pool,
         Err(_) => {
@@ -465,10 +536,7 @@ pub async fn insert_olib_book(
             if num_found > 0 {
                 let key = if let Some(doc) = cdata.docs.first() {
                     if let Some(key) = &doc.key {
-                        key.as_str()
-                            .split('/')
-                            .nth(2)
-                            .unwrap_or_default()
+                        key.as_str().split('/').nth(2).unwrap_or_default()
                     } else {
                         ""
                     }
@@ -488,12 +556,9 @@ pub async fn insert_olib_book(
                             .as_str()
                             .unwrap_or("")
                             .replace("'", "''");
-                        let physical_format = book_details["physical_format"]
-                            .as_str()
-                            .unwrap_or_default();
-                        let number_of_pages = book_details["number_of_pages"]
-                            .as_u64()
-                            .unwrap_or(0);
+                        let physical_format =
+                            book_details["physical_format"].as_str().unwrap_or_default();
+                        let number_of_pages = book_details["number_of_pages"].as_u64().unwrap_or(0);
                         let info_url = book_details["info_url"].to_string();
                         let publish_date = book_details["publish_date"].to_string();
                         let authors = book_details["authors"]
@@ -549,9 +614,7 @@ pub async fn insert_olib_book(
                 let random_id = format!("{}_3", rand::random::<u32>());
                 let default_query = format!(
                     "INSERT INTO Books VALUES ('{}', '3', '{}', NULL, 0, 0, 1, 0, 0, 0, '{}', NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, false);",
-                    random_id,
-                    realname,
-                    path
+                    random_id, realname, path
                 );
 
                 if let Err(err) = sqlx::query(&default_query).execute(&pool).await {
@@ -606,29 +669,54 @@ pub async fn refresh_meta_controller(
             let marvel_pub_api_key = state.creds.lock().await.marvel_public_key.clone();
             let marvel_priv_api_key = state.creds.lock().await.marvel_private_key.clone();
             if payload.item_type == "book" {
-                if let Err(e) = handle_marvel_book(&pool, &payload.id, payload.provider, &payload.token, marvel_priv_api_key.clone(), marvel_pub_api_key.clone()).await {
+                if let Err(e) = handle_marvel_book(
+                    &pool,
+                    &payload.id,
+                    payload.provider,
+                    &payload.token,
+                    marvel_priv_api_key.clone(),
+                    marvel_pub_api_key.clone(),
+                )
+                .await
+                {
                     eprintln!("Error handling Marvel book: {}", e);
                 }
             } else {
-                if let Err(e) = handle_marvel_series(&pool, &payload.id, payload.provider, &payload.token, marvel_priv_api_key.clone(), marvel_pub_api_key.clone()).await{
+                if let Err(e) = handle_marvel_series(
+                    &pool,
+                    &payload.id,
+                    payload.provider,
+                    &payload.token,
+                    marvel_priv_api_key.clone(),
+                    marvel_pub_api_key.clone(),
+                )
+                .await
+                {
                     eprintln!("Error handling Marvel series: {}", e);
                 }
             }
         }
         2 => {
             if payload.item_type != "book" {
-                if let Err(e) = handle_anilist_series(&pool, &payload.id, payload.provider, &payload.token).await {
+                if let Err(e) =
+                    handle_anilist_series(&pool, &payload.id, payload.provider, &payload.token)
+                        .await
+                {
                     eprintln!("Error handling Anilist series: {}", e);
                 }
             }
         }
         3 => {
-            if let Err(e) = handle_openlibrary_book(&pool, &payload.id, payload.provider, &payload.token).await {
+            if let Err(e) =
+                handle_openlibrary_book(&pool, &payload.id, payload.provider, &payload.token).await
+            {
                 eprintln!("Error handling OpenLibrary book: {}", e);
             }
         }
         4 => {
-            if let Err(e) = handle_google_book(&pool, &payload.id, payload.provider, &payload.token).await {
+            if let Err(e) =
+                handle_google_book(&pool, &payload.id, payload.provider, &payload.token).await
+            {
                 eprintln!("Error handling Google Book: {}", e);
             }
         }

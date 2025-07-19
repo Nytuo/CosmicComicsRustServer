@@ -1,21 +1,21 @@
-use std::{env, fs, path::Path, sync::Arc};
-use std::fs::File;
-use std::io::{BufWriter, Write};
-use axum::extract::Request;
-use axum::{extract::State, response::IntoResponse};
-use axum::http::HeaderMap;
-use color_thief::get_palette;
-use reqwest::StatusCode;
-use rgb::RGB;
-use serde::{Deserialize, Serialize};
-use sqlx::Row;
-use tokio::sync::Mutex;
-use zip::write::FileOptions;
 use crate::services::profile_service::resolve_token;
 use crate::{
     routes_manager::AppState,
     utils::{darken_color, is_light_color},
 };
+use axum::extract::Request;
+use axum::http::HeaderMap;
+use axum::{extract::State, response::IntoResponse};
+use color_thief::get_palette;
+use reqwest::StatusCode;
+use rgb::RGB;
+use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use std::fs::File;
+use std::io::{BufWriter, Write};
+use std::{env, fs, path::Path, sync::Arc};
+use tokio::sync::Mutex;
+use zip::write::FileOptions;
 
 #[derive(Serialize)]
 struct SerializableRgb {
@@ -242,21 +242,34 @@ pub async fn download_file(
 
     if path_obj.exists() {
         if path_obj.is_file() {
-             let file_content = match fs::read(&full_path) {
+            let file_content = match fs::read(&full_path) {
                 Ok(content) => content,
-                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read file").into_response(),
+                Err(_) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read file")
+                        .into_response();
+                }
             };
             return (StatusCode::OK, file_content).into_response();
         } else if path_obj.is_dir() {
-            let zip_path = format!("{}/{}.zip", base_path, path_obj.file_name().unwrap().to_str().unwrap());
+            let zip_path = format!(
+                "{}/{}.zip",
+                base_path,
+                path_obj.file_name().unwrap().to_str().unwrap()
+            );
             let zip_file = match File::create(&zip_path) {
                 Ok(file) => file,
-                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create zip file").into_response(),
+                Err(_) => {
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Failed to create zip file",
+                    )
+                        .into_response();
+                }
             };
 
             let mut zip_writer = zip::ZipWriter::new(BufWriter::new(zip_file));
-            let options = FileOptions::<()>::default()
-                .compression_method(zip::CompressionMethod::Stored);
+            let options =
+                FileOptions::<()>::default().compression_method(zip::CompressionMethod::Stored);
             for entry in fs::read_dir(path_obj).unwrap() {
                 let entry = entry.unwrap();
                 let entry_path = entry.path();
@@ -272,7 +285,10 @@ pub async fn download_file(
 
             let zip_content = match fs::read(&zip_path) {
                 Ok(content) => content,
-                Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read zip file").into_response(),
+                Err(_) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read zip file")
+                        .into_response();
+                }
             };
             return (StatusCode::OK, zip_content).into_response();
         }
@@ -291,7 +307,7 @@ pub struct Bookmark {
 
 pub async fn get_bookmarks(
     State(state): State<Arc<Mutex<AppState>>>,
-    headers: HeaderMap
+    headers: HeaderMap,
 ) -> impl IntoResponse {
     let state = state.lock().await;
     let config = state.config.lock().await;
@@ -307,13 +323,12 @@ pub async fn get_bookmarks(
         None => return (StatusCode::UNAUTHORIZED, "Invalid token").into_response(),
     };
 
-    let db_path = format!("{}/profiles/{}/database.db", base_path, resolved_token);
     let pool = match crate::repositories::database_repo::get_db(
-        &token,
+        &resolved_token,
         &base_path,
         state.global_vars.lock().await.opened_db.clone(),
     )
-        .await
+    .await
     {
         Ok(pool) => pool,
         Err(_) => {
@@ -325,7 +340,7 @@ pub async fn get_bookmarks(
                 .into_response();
         }
     };
-    
+
     let query = "SELECT * FROM Bookmarks;";
     let query_builder = sqlx::query(query);
     let stmt = match query_builder.fetch_all(&pool).await {
@@ -335,7 +350,6 @@ pub async fn get_bookmarks(
             return (StatusCode::INTERNAL_SERVER_ERROR, "Error executing query").into_response();
         }
     };
-    
 
     let bookmarks: Vec<Bookmark> = stmt
         .iter()

@@ -178,10 +178,12 @@ pub async fn login(
     let config = state.config.lock().await;
     let base_path = config.base_path.clone();
 
+    println!("Attempting login for user: {}", name);
+    println!("With Passcode: {}", passcode);
     match crate::services::profile_service::login_service(&name, &passcode, &base_path).await {
         Ok(token) => {
             println!("Login successful");
-            (StatusCode::OK, Json(token)).into_response()
+            (StatusCode::OK, token).into_response()
         }
         Err(e) => {
             eprintln!("Error logging in: {}", e);

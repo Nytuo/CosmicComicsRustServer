@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 pub fn common_routes(state: Arc<tokio::sync::Mutex<AppState>>) -> Router {
     Router::new()
-        .route("/dirname", post(get_dirname))
-        .route("/CosmicDataLoc", post(get_dirname))
+        .route("/dirname", get(get_dirname))
+        .route("/CosmicDataLoc", get(get_dirname))
         .route("/lang/{lang}", post(get_lang))
         .route("/null", get(get_null))
         .route("/img/getColor/{img}/{token}", get(get_color))
