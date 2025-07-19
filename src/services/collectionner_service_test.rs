@@ -55,7 +55,7 @@ mod tests {
 
     use crate::services::collectionner_service::{
         get_list_of_files_and_folders, get_list_of_folders, handle_anilist_series,
-        handle_marvel_book, handle_marvel_series,
+        handle_google_book, handle_marvel_book, handle_marvel_series, handle_openlibrary_book,
     };
 
     /* #[tokio::test]
@@ -164,6 +164,180 @@ mod tests {
             .unwrap();
 
         let title: String = row.get("title");
+        let description: String = row.get("description");
+
+        assert!(!title.is_empty());
+        assert!(!description.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_handle_googlebooks_book_writes_to_db() {
+        let pool = SqlitePoolOptions::new().connect(":memory:").await.unwrap();
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS Books (
+            ID_book TEXT PRIMARY KEY NOT NULL,
+            API_ID TEXT,
+            NOM TEXT NOT NULL,
+            note INTEGER,
+            read BOOLEAN NOT NULL,
+            reading BOOLEAN NOT NULL,
+            unread BOOLEAN NOT NULL,
+            favorite BOOLEAN NOT NULL,
+            last_page INTEGER NOT NULL,
+            folder BOOLEAN NOT NULL,
+            PATH TEXT NOT NULL,
+            URLCover TEXT,
+            issueNumber INTEGER,
+            description TEXT,
+            format TEXT,
+            pageCount INTEGER,
+            URLs TEXT,
+            series TEXT,
+            creators TEXT,
+            characters TEXT,
+            prices TEXT,
+            dates TEXT,
+            collectedIssues TEXT,
+            collections TEXT,
+            variants TEXT,
+            lock BOOLEAN DEFAULT false NOT NULL
+        );",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO Books (ID_book, API_ID, NOM, note, read, reading, unread, favorite, last_page,
+            folder, PATH, URLCover, issueNumber, description, format, pageCount, URLs, series, creators, characters, prices, dates,
+            collectedIssues, collections, variants, lock) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind("ltKXEAAAQBAJ")
+    .bind("api_ltKXEAAAQBAJ")
+    .bind("Test Title")
+    .bind(0)
+    .bind(false)
+    .bind(false)
+    .bind(true)
+    .bind(false)
+    .bind(0)
+    .bind(false)
+    .bind("series/path")
+    .bind("cover_url")
+    .bind(1)
+    .bind("Test description")
+    .bind("original")
+    .bind(10)
+    .bind("urls_json")
+    .bind("series_name")
+    .bind("creators_json")
+    .bind("characters_json")
+    .bind("prices_json")
+    .bind("dates_json")
+    .bind("collected_issues_json")
+    .bind("collections_json")
+    .bind("variants_json")
+    .bind(false)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+        let result = handle_google_book(&pool, "ltKXEAAAQBAJ", 2, "dummy_token").await;
+        assert!(result.is_ok());
+
+        let row = sqlx::query("SELECT NOM, description FROM Books WHERE ID_book = ?")
+            .bind("ltKXEAAAQBAJ")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let title: String = row.get("NOM");
+        let description: String = row.get("description");
+
+        assert!(!title.is_empty());
+        assert!(!description.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_handle_openlibrary_book_writes_to_db() {
+        let pool = SqlitePoolOptions::new().connect(":memory:").await.unwrap();
+
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS Books (
+            ID_book TEXT PRIMARY KEY NOT NULL,
+            API_ID TEXT,
+            NOM TEXT NOT NULL,
+            note INTEGER,
+            read BOOLEAN NOT NULL,
+            reading BOOLEAN NOT NULL,
+            unread BOOLEAN NOT NULL,
+            favorite BOOLEAN NOT NULL,
+            last_page INTEGER NOT NULL,
+            folder BOOLEAN NOT NULL,
+            PATH TEXT NOT NULL,
+            URLCover TEXT,
+            issueNumber INTEGER,
+            description TEXT,
+            format TEXT,
+            pageCount INTEGER,
+            URLs TEXT,
+            series TEXT,
+            creators TEXT,
+            characters TEXT,
+            prices TEXT,
+            dates TEXT,
+            collectedIssues TEXT,
+            collections TEXT,
+            variants TEXT,
+            lock BOOLEAN DEFAULT false NOT NULL
+        );",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        sqlx::query("INSERT INTO Books (ID_book, API_ID, NOM, note, read, reading, unread, favorite, last_page,
+            folder, PATH, URLCover, issueNumber, description, format, pageCount, URLs, series, creators, characters, prices, dates,
+            collectedIssues, collections, variants, lock) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .bind("OL43511705M")
+    .bind("api_OL43511705M")
+    .bind("Test Title")
+    .bind(0)
+    .bind(false)
+    .bind(false)
+    .bind(true)
+    .bind(false)
+    .bind(0)
+    .bind(false)
+    .bind("series/path")
+    .bind("cover_url")
+    .bind(1)
+    .bind("Test description")
+    .bind("original")
+    .bind(10)
+    .bind("urls_json")
+    .bind("series_name")
+    .bind("creators_json")
+    .bind("characters_json")
+    .bind("prices_json")
+    .bind("dates_json")
+    .bind("collected_issues_json")
+    .bind("collections_json")
+    .bind("variants_json")
+    .bind(false)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+        let result = handle_openlibrary_book(&pool, "OL43511705M", 2, "dummy_token").await;
+        assert!(result.is_ok());
+
+        let row = sqlx::query("SELECT NOM, description FROM Books WHERE ID_book = ?")
+            .bind("OL43511705M")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let title: String = row.get("NOM");
         let description: String = row.get("description");
 
         assert!(!title.is_empty());

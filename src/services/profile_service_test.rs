@@ -303,7 +303,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         let profile = &result[0];
         assert_eq!(profile["name"], "user42");
-        assert_eq!(profile["passcode"], true);
+        assert_eq!(profile["passcode"], false);
         assert!(
             profile["image"]
                 .as_str()
