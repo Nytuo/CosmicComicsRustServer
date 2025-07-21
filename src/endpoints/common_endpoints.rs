@@ -13,8 +13,6 @@ pub fn common_routes(state: Arc<tokio::sync::Mutex<AppState>>) -> Router {
         .route("/CosmicDataLoc", get(get_dirname))
         .route("/lang/{lang}", post(get_lang))
         .route("/null", get(get_null))
-        .route("/img/getColor/{img}/{token}", get(get_color))
-        .route("/img/getPalette/{token}", get(get_palette_color))
         .route("/getThemes", get(get_themes))
         .route("/getStatus/{token}/{type}", get(get_status))
         .route(
