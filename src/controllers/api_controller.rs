@@ -7,6 +7,7 @@ use crate::services::marvel_service::{
     get_marvel_api_relations, get_marvel_api_search,
 };
 use crate::services::openlibrary_service::get_olapi_search;
+use crate::services::profile_service::resolve_token;
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
@@ -491,9 +492,18 @@ pub async fn anilist_add(
     if path.is_empty() {
         return (StatusCode::BAD_REQUEST, "Path cannot be empty".to_string()).into_response();
     }
-
+    let resolved_token = match resolve_token(&token, &base_path) {
+        Some(t) => t,
+        None => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                "Error resolving token".to_string(),
+            )
+                .into_response();
+        }
+    };
     let pool = match crate::repositories::database_repo::get_db(
-        &token,
+        &resolved_token,
         &base_path,
         state.global_vars.lock().await.opened_db.clone(),
     )

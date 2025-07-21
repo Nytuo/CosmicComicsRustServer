@@ -1,8 +1,11 @@
 use sqlx::sqlite::{SqlitePool, SqliteValueRef};
-use sqlx::{Column, Executor, Row, query, ValueRef, TypeInfo};
+use sqlx::{Column, Executor, Row, TypeInfo, ValueRef, query};
 use std::collections::HashMap;
 use std::fs;
+use std::iter::repeat;
 use std::path::Path;
+
+use crate::utils::strip_outer_quotes;
 
 pub async fn make_db(profile_owner: &str, base_path: &str) -> Result<(), sqlx::Error> {
     let db_path = format!("{}/profiles/{}/CosmicComics.db", base_path, profile_owner);
@@ -65,7 +68,7 @@ pub async fn make_db(profile_owner: &str, base_path: &str) -> Result<(), sqlx::E
     conn.execute(
         r#"
         CREATE TABLE IF NOT EXISTS API (
-            ID_API INTEGER PRIMARY KEY NOT NULL,
+            ID_API TEXT PRIMARY KEY NOT NULL,
             NOM TEXT NOT NULL
         );
         "#,
@@ -76,11 +79,11 @@ pub async fn make_db(profile_owner: &str, base_path: &str) -> Result<(), sqlx::E
         r#"
         INSERT OR REPLACE INTO API (ID_API, NOM)
         VALUES
-            (1, 'Marvel'),
-            (2, 'Anilist'),
-            (4, 'LeagueOfComicsGeeks'),
-            (3, 'OpenLibrary'),
-            (0, 'MANUAL');
+            ('1', 'Marvel'),
+            ('2', 'Anilist'),
+            ('4', 'Google Books API'),
+            ('3', 'OpenLibrary'),
+            ('0', 'MANUAL');
         "#,
     )
     .await?;
@@ -174,7 +177,7 @@ pub async fn make_db(profile_owner: &str, base_path: &str) -> Result<(), sqlx::E
             ID_LIBRARY INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
             NAME TEXT NOT NULL,
             PATH TEXT NOT NULL,
-            API_ID INTEGER NOT NULL,
+            API_ID TEXT NOT NULL,
             FOREIGN KEY (API_ID) REFERENCES API (ID_API)
         );
         "#,
@@ -254,7 +257,10 @@ pub async fn insert_into_db(
     } else {
         String::new()
     };
-    let placeholders = values.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
+    let placeholders = repeat("?")
+        .take(values.len())
+        .collect::<Vec<_>>()
+        .join(", ");
     let insert_query = format!(
         "INSERT OR IGNORE INTO {} {} VALUES ({});",
         table, column_names, placeholders
@@ -262,6 +268,7 @@ pub async fn insert_into_db(
     println!("Executing query: {}", insert_query);
     let mut query_builder = query(&insert_query);
     for value in values {
+        println!("{}", value);
         query_builder = query_builder.bind(value);
     }
     query_builder.execute(db_pool).await?;
@@ -311,7 +318,8 @@ pub async fn select_from_db(
                     "BOOLEAN" => row.try_get::<bool, _>(i).map(|v| v.to_string()),
                     "REAL" => row.try_get::<f64, _>(i).map(|v| v.to_string()),
                     _ => Ok("<unsupported>".to_string()),
-                }.unwrap_or_else(|_| "<error>".to_string())
+                }
+                .unwrap_or_else(|_| "<error>".to_string())
             };
 
             row_map.insert(column.name().to_string(), value_str);
@@ -332,7 +340,24 @@ pub async fn select_from_db_with_options(
     for row in rows {
         let mut row_map = HashMap::new();
         for (i, column) in row.columns().iter().enumerate() {
-            row_map.insert(column.name().to_string(), row.get::<String, _>(i));
+            let raw_value = row.try_get_raw(i)?;
+            let value_str = if raw_value.is_null() {
+                "NULL".to_string()
+            } else {
+                match raw_value.type_info().name() {
+                    "INTEGER" => row.try_get::<i64, _>(i).map(|v| v.to_string()),
+                    "TEXT" => row.try_get::<String, _>(i),
+                    "BOOLEAN" => row.try_get::<bool, _>(i).map(|v| v.to_string()),
+                    "REAL" => row.try_get::<f64, _>(i).map(|v| v.to_string()),
+                    _ => Ok("<unsupported>".to_string()),
+                }
+                .unwrap_or_else(|_| "<error>".to_string())
+            };
+
+            row_map.insert(
+                column.name().to_string(),
+                strip_outer_quotes(&value_str[..]).to_string(),
+            );
         }
         results.push(row_map);
     }

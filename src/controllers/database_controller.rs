@@ -28,7 +28,20 @@ pub async fn insert_db(
     let db_name = db_name.replace("'", "''").replace("\"", "\\\"");
     let db_info = payload["into"].as_str().unwrap_or_default();
     let values = payload["val"].as_str().unwrap_or_default();
-
+    let clean_db_info = db_info
+        .trim_matches(|c| c == '(' || c == ')')
+        .replace('\'', "");
+    let clean_values = values
+        .trim_matches(|c| c == '(' || c == ')')
+        .replace('\'', "");
+    let values_vector: Vec<String> = clean_values
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
+    let columns_vector: Vec<String> = clean_db_info
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .collect();
     let pool = match crate::repositories::database_repo::get_db(
         &resolved_token,
         base_path,
@@ -39,19 +52,17 @@ pub async fn insert_db(
         Ok(pool) => pool,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get DB").into_response(),
     };
-    insert_into_db(
-        &pool,
-        &db_name,
-        Some(vec![db_info.to_string()]),
-        vec![values.to_string()],
-    )
-    .await
-    .unwrap_or_else(|_| {
-        eprintln!("Failed to insert into DB");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Insert failed").into_response();
-    });
-    println!("Inserted into DB: {} {}", db_info, values);
-    (StatusCode::OK, "Insert successful").into_response()
+
+    match insert_into_db(&pool, &db_name, Some(columns_vector), values_vector).await {
+        Ok(_) => {
+            println!("Inserted into DB: {} {}", db_info, values);
+            (StatusCode::OK, "Insert successful").into_response()
+        }
+        Err(error_msg) => {
+            eprintln!("Failed to insert into DB: {}", error_msg);
+            (StatusCode::INTERNAL_SERVER_ERROR, "Insert failed").into_response()
+        }
+    }
 }
 
 pub async fn write_db(

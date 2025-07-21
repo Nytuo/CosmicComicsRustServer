@@ -51,8 +51,6 @@ pub fn get_list_of_images(dir_path: &std::path::Path, valid_extensions: &[&str])
     }
 }
 
-
-
 pub fn is_image_file(name: &str) -> bool {
     VALID_IMAGE_EXTENSION
         .iter()
@@ -73,4 +71,12 @@ pub(crate) fn generate_random_id() -> u32 {
     let mut rng = rand::thread_rng();
     let id: u32 = rng.gen_range(0..=u32::MAX);
     id
+}
+
+pub fn strip_outer_quotes(s: &str) -> &str {
+    if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
 }

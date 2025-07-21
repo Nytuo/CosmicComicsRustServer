@@ -52,12 +52,28 @@ pub async fn get_profile_picture(
     let file_path = format!("{}/profiles/{}/pp.png", base_path, token);
 
     if Path::new(&file_path).exists() {
-        (StatusCode::OK, Json(file_path))
+        match fs::read(&file_path) {
+            Ok(image_bytes) => {
+                let mut headers = HeaderMap::new();
+                headers.insert("Content-Type", "image/png".parse().unwrap());
+                headers.insert(
+                    "Content-Disposition",
+                    "inline; filename=\"pp.png\"".parse().unwrap(),
+                );
+                (StatusCode::OK, headers, image_bytes).into_response()
+            }
+            Err(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json("Failed to read profile picture".to_string()),
+            )
+                .into_response(),
+        }
     } else {
         (
             StatusCode::NOT_FOUND,
             Json("Profile picture not found".to_string()),
         )
+            .into_response()
     }
 }
 
@@ -72,12 +88,28 @@ pub async fn get_profile_picture_by_name(
     let file_path = format!("{}/profiles/{}/pp.png", base_path, name);
 
     if Path::new(&file_path).exists() {
-        (StatusCode::OK, Json(file_path))
+        match fs::read(&file_path) {
+            Ok(image_bytes) => {
+                let mut headers = HeaderMap::new();
+                headers.insert("Content-Type", "image/png".parse().unwrap());
+                headers.insert(
+                    "Content-Disposition",
+                    "inline; filename=\"pp.png\"".parse().unwrap(),
+                );
+                (StatusCode::OK, headers, image_bytes).into_response()
+            }
+            Err(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json("Failed to read profile picture".to_string()),
+            )
+                .into_response(),
+        }
     } else {
         (
             StatusCode::NOT_FOUND,
             Json("Profile picture not found".to_string()),
         )
+            .into_response()
     }
 }
 

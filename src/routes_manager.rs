@@ -1,6 +1,7 @@
 use crate::ApiTokens;
 use crate::AppConfig;
 use crate::AppGlobalVariables;
+use crate::endpoints::api_endpoints::api_routes;
 use crate::endpoints::collectionner_endpoints::collectionner_routes;
 use crate::endpoints::common_endpoints::common_routes;
 use crate::endpoints::database_endpoints::database_routes;
@@ -44,6 +45,7 @@ pub fn create_router(
         .merge(collectionner_routes(state.clone()))
         .merge(viewer_routes(state.clone()))
         .merge(database_routes(state.clone()))
+        .merge(api_routes(state.clone()))
         .fallback(fallback_handler)
         .layer(from_fn(log_request))
 }
