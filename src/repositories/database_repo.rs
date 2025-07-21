@@ -267,7 +267,11 @@ pub async fn insert_into_db(
     );
     println!("Executing query: {}", insert_query);
     let mut query_builder = query(&insert_query);
-    for value in values {
+    let values_without_quotes = values
+        .iter()
+        .map(|value| strip_outer_quotes(value))
+        .collect::<Vec<_>>();
+    for value in values_without_quotes {
         println!("{}", value);
         query_builder = query_builder.bind(value);
     }
