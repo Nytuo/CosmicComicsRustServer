@@ -24,7 +24,18 @@ pub async fn log_request(
     req: Request<axum::body::Body>,
     next: axum::middleware::Next,
 ) -> impl IntoResponse {
-    println!("[REQUEST]: {} {}", req.method(), req.uri());
+    println!("[REQUEST] {} {}", req.method(), req.uri().path());
+    println!("[HEADERS]");
+    for (name, value) in req.headers().iter() {
+        println!("{}: {:?}", name, value);
+    }
+    let (parts, body) = req.into_parts();
+    let bytes = axum::body::to_bytes(body, usize::MAX)
+        .await
+        .unwrap_or_default();
+    let body_str = String::from_utf8_lossy(&bytes);
+    println!("[BODY] {}", body_str);
+    let req = Request::from_parts(parts, axum::body::Body::from(bytes));
     next.run(req).await
 }
 

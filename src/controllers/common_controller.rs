@@ -14,6 +14,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::{env, fs, path::Path, sync::Arc};
 use tokio::sync::Mutex;
+use tracing::{debug, error, info, trace, warn};
 use zip::write::FileOptions;
 
 #[derive(Serialize)]
@@ -216,7 +217,7 @@ pub async fn get_bookmarks(
     {
         Ok(pool) => pool,
         Err(_) => {
-            eprintln!("Error getting database pool");
+            error!("Error getting database pool");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error getting database pool",
@@ -230,7 +231,7 @@ pub async fn get_bookmarks(
     let stmt = match query_builder.fetch_all(&pool).await {
         Ok(stmt) => stmt,
         Err(e) => {
-            eprintln!("Error executing query: {}", e);
+            error!("Error executing query: {}", e);
             return (StatusCode::INTERNAL_SERVER_ERROR, "Error executing query").into_response();
         }
     };

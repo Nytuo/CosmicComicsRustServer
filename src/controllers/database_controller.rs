@@ -38,9 +38,13 @@ pub async fn insert_db(
         .split(',')
         .map(|s| s.trim().to_string())
         .collect();
-    let columns_vector: Vec<String> = clean_db_info
+    let mut columns_vector: Vec<String> = clean_db_info
         .split(',')
         .map(|s| s.trim().to_string())
+        .collect();
+    columns_vector = columns_vector
+        .into_iter()
+        .filter(|s| !s.is_empty())
         .collect();
     let pool = match crate::repositories::database_repo::get_db(
         &resolved_token,
@@ -53,7 +57,18 @@ pub async fn insert_db(
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get DB").into_response(),
     };
 
-    match insert_into_db(&pool, &db_name, Some(columns_vector), values_vector).await {
+    match insert_into_db(
+        &pool,
+        &db_name,
+        if columns_vector.is_empty() {
+            None
+        } else {
+            Some(columns_vector)
+        },
+        values_vector,
+    )
+    .await
+    {
         Ok(_) => {
             println!("Inserted into DB: {} {}", db_info, values);
             (StatusCode::OK, "Insert successful").into_response()
@@ -172,10 +187,12 @@ pub async fn update_db_body(
         None => return (StatusCode::UNAUTHORIZED, "Invalid token").into_response(),
     };
 
+    println!("payload: {:?}", payload);
+
     let type_name = payload["type"].as_str().unwrap_or_default();
     let db_name = payload["table"].as_str().unwrap_or_default();
-    let col_name = payload["column"].as_str().unwrap_or_default();
-    let value = payload["value"].as_str().unwrap_or_default();
+    let columns = payload["column"].as_array().unwrap_or(&vec![]);
+    let values = payload["value"].as_array().unwrap_or(&vec![]);
     let where_ = payload["where"].as_str().unwrap_or_default();
     let where_value = payload["whereEl"].as_str().unwrap_or_default();
 
@@ -189,14 +206,34 @@ pub async fn update_db_body(
         Ok(pool) => pool,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get DB").into_response(),
     };
-    let col_vec = vec![col_name.replace("'", "''").replace("\"", "\\\"")];
-    let val_vec = vec![value.replace("'", "''").replace("\"", "\\\"")];
+
+    let columns: Vec<String> = if payload["column"].is_array() {
+        payload["column"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap_or_default().to_string())
+            .collect()
+    } else {
+        vec![payload["column"].as_str().unwrap_or_default().to_string()]
+    };
+
+    let values: Vec<String> = if payload["value"].is_array() {
+        payload["value"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap_or_default().to_string())
+            .collect()
+    } else {
+        vec![payload["value"].as_str().unwrap_or_default().to_string()]
+    };
 
     crate::repositories::database_repo::update_db(
         &pool,
         type_name,
-        col_vec,
-        val_vec,
+        columns,
+        values,
         &db_name,
         &where_,
         &where_value,
@@ -207,10 +244,6 @@ pub async fn update_db_body(
         (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
     });
 
-    println!(
-        "Updated DB: {} {} {} {}",
-        db_name, col_name, value, where_value
-    );
     (StatusCode::OK, "Update successful").into_response()
 }
 
@@ -341,6 +374,7 @@ pub async fn update_lib(
 
     let col_vec = vec!["NAME".to_string(), "PATH".to_string(), "API_ID".to_string()];
     let val_vec = vec![name.to_string(), path.to_string(), api.to_string()];
+
     crate::repositories::database_repo::update_db(
         &pool,
         "no_edit",
@@ -444,7 +478,7 @@ pub async fn true_delete_db(
         &db_name,
         "ID_book",
         &*id,
-        Some("true"),
+        Option::None,
     )
     .await
     .unwrap_or_else(|_| {
@@ -488,7 +522,7 @@ pub async fn delete_lib(
         "Libraries",
         "ID_LIBRARY",
         &*id,
-        Some("true"),
+        Option::None,
     )
     .await
     .unwrap_or_else(|_| {

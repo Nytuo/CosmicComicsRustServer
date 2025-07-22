@@ -15,7 +15,7 @@ pub fn database_routes(state: Arc<tokio::sync::Mutex<AppState>>) -> Router {
         )
         .route("/DB/update/OneForAll", post(update_db_one_for_all))
         .route("/DB/update", post(update_db_body))
-        .route("/DB/lib/update/{token}/{id}", get(update_lib))
+        .route("/DB/lib/update/{token}/{id}", post(update_lib))
         .route("/DB/delete/{token}/{dbName}/{id}/{option}", get(delete_db))
         .route(
             "/DB/delete/truedelete/{token}/{dbName}/{id}",

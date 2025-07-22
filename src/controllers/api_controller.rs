@@ -14,6 +14,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use std::sync::Arc;
+use tracing::{debug, error, info, trace, warn};
 
 pub async fn marvel_search_only(
     State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
@@ -43,11 +44,11 @@ pub async fn marvel_search_only(
     .await
     {
         Ok(response) => {
-            println!("marvel API search returned");
+            info!("marvel API search returned");
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
-            eprintln!("Error fetching data from Marvel API: {}", e);
+            error!("Error fetching data from Marvel API: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error fetching data from Marvel API",
@@ -76,11 +77,11 @@ pub async fn marvel_get_comics(
 
     match get_marvel_api_comics(&*name, &*date, &*marvel_private_key, &*marvel_public_key).await {
         Ok(response) => {
-            println!("marvel API search returned");
+            info!("marvel API search returned");
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
-            eprintln!("Error fetching data from Marvel API: {}", e);
+            error!("Error fetching data from Marvel API: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error fetching data from Marvel API",
@@ -101,11 +102,11 @@ pub async fn openlibrary_search(
 
     match get_olapi_search(&*name).await {
         Ok(response) => {
-            println!("openlibrary API search returned");
+            info!("openlibrary API search returned");
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
-            eprintln!("Error fetching data from OpenLibrary API: {}", e);
+            error!("Error fetching data from OpenLibrary API: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error fetching data from OpenLibrary API",
@@ -129,11 +130,11 @@ pub async fn googlebooks_search(
 
     match search_gbapi_comics_by_name(&*name, google_books_api_key).await {
         Ok(response) => {
-            println!("googlebooks API search returned");
+            info!("googlebooks API search returned");
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
-            eprintln!("Error fetching data from GoogleBooks API: {}", e);
+            error!("Error fetching data from GoogleBooks API: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error fetching data from GoogleBooks API",
@@ -182,7 +183,7 @@ pub async fn marvel_add(
     {
         Ok(pool) => pool,
         Err(_) => {
-            eprintln!("Error getting database pool");
+            error!("Error getting database pool");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error getting database pool",
@@ -350,7 +351,7 @@ pub async fn marvel_add(
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error fetching data from Marvel API: {}", e);
+                        error!("Error fetching data from Marvel API: {}", e);
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Error fetching data from Marvel API",
@@ -400,7 +401,7 @@ pub async fn marvel_add(
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error fetching data from Marvel API: {}", e);
+                        error!("Error fetching data from Marvel API: {}", e);
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Error fetching data from Marvel API",
@@ -450,7 +451,7 @@ pub async fn marvel_add(
                         }
                     }
                     Err(e) => {
-                        eprintln!("Error fetching data from Marvel API: {}", e);
+                        error!("Error fetching data from Marvel API: {}", e);
                         return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             "Error fetching data from Marvel API",
@@ -461,7 +462,7 @@ pub async fn marvel_add(
             }
         }
         Err(e) => {
-            eprintln!("Error fetching data from Marvel API: {}", e);
+            error!("Error fetching data from Marvel API: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error fetching data from Marvel API",
@@ -511,7 +512,7 @@ pub async fn anilist_add(
     {
         Ok(pool) => pool,
         Err(_) => {
-            eprintln!("Error getting database pool");
+            error!("Error getting database pool");
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error getting database pool",
@@ -733,7 +734,7 @@ pub async fn anilist_add(
             }
         }
         Err(e) => {
-            eprintln!("Error fetching data from Anilist API: {}", e);
+            error!("Error fetching data from Anilist API: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error fetching data from Anilist API",
@@ -755,11 +756,11 @@ pub async fn anilist_search(
 
     match api_anilist_get_search(name.as_str()).await {
         Ok(response) => {
-            println!("Anilist API search returned");
+            info!("Anilist API search returned");
             (StatusCode::OK, Json(response)).into_response()
         }
         Err(e) => {
-            eprintln!("Error fetching data from Anilist API: {}", e);
+            error!("Error fetching data from Anilist API: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error fetching data from Anilist API",

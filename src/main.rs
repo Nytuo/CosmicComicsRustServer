@@ -1,16 +1,18 @@
 use crate::routes_manager::create_router;
+use rust_embed::RustEmbed;
 use serde_json::{Value, json};
 use sqlx::sqlite::SqlitePool;
+use std::fs::File;
+use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::{collections::HashMap, env, fs, path::PathBuf, sync::Arc};
-use std::fs::File;
-use std::io::Write;
-use rust_embed::RustEmbed;
 use tokio::signal;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
+use tracing::{debug, error, info, trace, warn};
+use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::{self};
 
 mod controllers;
@@ -115,7 +117,7 @@ fn setup_cosmic_comics_temp(base_path: &str) {
     let cosmic_comics_temp = PathBuf::from(base_path.clone());
 
     fs::create_dir_all(&cosmic_comics_temp).unwrap_or_else(|err| {
-        eprintln!("Failed to create directory: {:?}", err);
+        error!("Failed to create directory: {:?}", err);
     });
 
     let env_path = cosmic_comics_temp.join(".env");
@@ -123,11 +125,11 @@ fn setup_cosmic_comics_temp(base_path: &str) {
         let env_sample_path = PathBuf::from(".env.sample");
         if env_sample_path.exists() {
             fs::copy(&env_sample_path, &env_path).unwrap_or_else(|err| {
-                eprintln!("Failed to copy .env.sample: {:?}", err);
+                error!("Failed to copy .env.sample: {:?}", err);
                 0
             });
         } else {
-            eprintln!(".env.sample file not found!");
+            error!(".env.sample file not found!");
         }
     }
 }
@@ -145,7 +147,7 @@ fn setup_server_config(cosmic_comics_temp: &str, dev_mode: bool) {
             &server_config_path,
             serde_json::to_string_pretty(&default_config).unwrap(),
         ) {
-            eprintln!("Failed to create serverconfig.json: {:?}", err);
+            error!("Failed to create serverconfig.json: {:?}", err);
         }
     } else if !dev_mode {
         if let Ok(config_content) = fs::read_to_string(&server_config_path) {
@@ -158,22 +160,22 @@ fn setup_server_config(cosmic_comics_temp: &str, dev_mode: bool) {
                     &server_config_path,
                     serde_json::to_string_pretty(&config_json).unwrap(),
                 ) {
-                    eprintln!(
+                    error!(
                         "Failed to reset Token field in serverconfig.json: {:?}",
                         err
                     );
                 }
             } else {
-                eprintln!("Failed to parse serverconfig.json");
+                error!("Failed to parse serverconfig.json");
             }
         } else {
-            eprintln!("Failed to read serverconfig.json");
+            error!("Failed to read serverconfig.json");
         }
     }
 }
 
 async fn handle_sigint() {
-    println!("Removing ZIPs to DL");
+    info!("Removing ZIPs to DL");
 
     let todl_path = "./public/TODL";
     let uploads_path = format!(
@@ -183,13 +185,13 @@ async fn handle_sigint() {
 
     if Path::new(todl_path).exists() {
         if let Err(err) = fs::remove_dir_all(todl_path) {
-            eprintln!("Failed to remove directory {}: {:?}", todl_path, err);
+            error!("Failed to remove directory {}: {:?}", todl_path, err);
         }
     }
 
     if Path::new(&uploads_path).exists() {
         if let Err(err) = fs::remove_dir_all(&uploads_path) {
-            eprintln!("Failed to remove directory {}: {:?}", uploads_path, err);
+            error!("Failed to remove directory {}: {:?}", uploads_path, err);
         }
     }
 }
@@ -213,11 +215,11 @@ async fn sigint() {
 
     tokio::select! {
         _ = ctrl_c => {
-            println!("Received Ctrl+C, shutting down...");
+            info!("Received Ctrl+C, shutting down...");
             handle_sigint().await;
             },
         _ = terminate => {
-            println!("Received SIGTERM, shutting down...");
+            info!("Received SIGTERM, shutting down...");
             handle_sigint().await;
             },
     }
@@ -226,7 +228,12 @@ async fn sigint() {
 #[tokio::main]
 async fn main() {
     dotenv::dotenv().ok();
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_env_filter("info")
+        .with_timer(ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string()))
+        .with_target(true)
+        .with_thread_names(true)
+        .init();
     let dev_mode = env::var("DEV_MODE").unwrap_or_else(|_| "false".to_string());
     let base_path: String = if dev_mode == "true" {
         env::current_dir().unwrap().to_str().unwrap().to_string()
@@ -242,7 +249,7 @@ async fn main() {
             .join("FirstImagesOfAll"),
     )
     .unwrap_or_else(|err| {
-        eprintln!("Failed to create directory: {:?}", err);
+        error!("Failed to create directory: {:?}", err);
     });
     let mut permissions = fs::metadata(
         PathBuf::from(base_path.clone())
@@ -259,11 +266,11 @@ async fn main() {
         permissions,
     )
     .unwrap_or_else(|err| {
-        eprintln!("Failed to set permissions: {:?}", err);
+        error!("Failed to set permissions: {:?}", err);
     });
     fs::create_dir_all(PathBuf::from(base_path.clone()).join("public").join("TODL"))
         .unwrap_or_else(|err| {
-            eprintln!("Failed to create directory: {:?}", err);
+            error!("Failed to create directory: {:?}", err);
         });
     fs::create_dir_all(
         PathBuf::from(base_path.clone())
@@ -271,18 +278,23 @@ async fn main() {
             .join("uploads"),
     )
     .unwrap_or_else(|err| {
-        eprintln!("Failed to create directory: {:?}", err);
+        error!("Failed to create directory: {:?}", err);
     });
     fs::create_dir_all(PathBuf::from(base_path.clone()).join("profiles")).unwrap_or_else(|err| {
-        eprintln!("Failed to create directory: {:?}", err);
+        error!("Failed to create directory: {:?}", err);
     });
 
-    fs::create_dir_all(PathBuf::from(base_path.clone()) .join("public").join("Images")).unwrap_or_else(|err| {
-        eprintln!("Failed to create directory: {:?}", err);
+    fs::create_dir_all(
+        PathBuf::from(base_path.clone())
+            .join("public")
+            .join("Images"),
+    )
+    .unwrap_or_else(|err| {
+        error!("Failed to create directory: {:?}", err);
     });
 
     for file in Asset::iter() {
-        println!("Extracting: {}", file);
+        info!("Extracting: {}", file);
 
         if let Some(content) = Asset::get(&file) {
             let out_path = Path::new(&base_path)
@@ -298,7 +310,7 @@ async fn main() {
                 .write_all(&content.data)
                 .expect("Failed to write file");
 
-            println!("Written to: {:?}", out_path);
+            info!("Written to: {:?}", out_path);
         }
     }
 
@@ -318,16 +330,16 @@ async fn main() {
                         &server_config_path,
                         serde_json::to_string_pretty(&config_json).unwrap(),
                     ) {
-                        eprintln!(
+                        error!(
                             "Failed to reset Token field in serverconfig.json: {:?}",
                             err
                         );
                     }
                 } else {
-                    eprintln!("Failed to parse serverconfig.json");
+                    error!("Failed to parse serverconfig.json");
                 }
             } else {
-                eprintln!("Failed to read serverconfig.json");
+                error!("Failed to read serverconfig.json");
             }
         })
     })
@@ -340,7 +352,7 @@ async fn main() {
             let public_path = PathBuf::from(base_path.clone()).join("public").join("TODL");
             if public_path.exists() {
                 fs::remove_dir_all(&public_path).unwrap_or_else(|err| {
-                    eprintln!("Failed to remove directory: {:?}", err);
+                    error!("Failed to remove directory: {:?}", err);
                 });
             }
         })
@@ -391,7 +403,7 @@ async fn main() {
     };
 
     let bind_url = format!("0.0.0.0:{}", port);
-    println!("Server running at {}", bind_url);
+    info!("Server running at {}", bind_url);
 
     let listener = tokio::net::TcpListener::bind(bind_url)
         .await

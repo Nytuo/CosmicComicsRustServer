@@ -380,7 +380,7 @@ pub async fn delete_from_db(
         table,
         condition_column,
         condition_value,
-        option.unwrap_or("?")
+        option.unwrap_or("")
     );
     println!("Executing query: {}", delete_query);
     query(&delete_query).execute(db_pool).await?;

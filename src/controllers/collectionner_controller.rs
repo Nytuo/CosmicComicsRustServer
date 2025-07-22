@@ -17,7 +17,10 @@ use axum::response::IntoResponse;
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::Row;
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Deserialize)]
 pub struct FillBlankImagePayload {
@@ -78,7 +81,7 @@ pub async fn fill_blank_images_controller(
     {
         Ok(pool) => pool,
         Err(_) => {
-            eprintln!("Error getting database pool");
+            error!("Error getting database pool");
             return StatusCode::INTERNAL_SERVER_ERROR;
         }
     };
@@ -86,18 +89,55 @@ pub async fn fill_blank_images_controller(
     match crate::services::book_service::fill_blank_images(
         pool,
         crate::utils::VALID_IMAGE_EXTENSION,
-        Option::None,
+        Some(format!("{}/public/FirstImagesOfAll", base_path)),
     )
     .await
     {
         Ok(_) => {
-            println!("Fill blank images completed successfully");
+            info!("Fill blank images completed successfully");
             StatusCode::OK
         }
         Err(e) => {
-            eprintln!("Error filling blank images: {}", e);
+            error!("Error filling blank images: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         }
+    }
+}
+
+pub async fn first_images_of_all_image_getter(
+    State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
+    axum::extract::Path(image_name): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let state = &state.lock().await;
+    let config = state.config.lock().await;
+
+    let base_path = config.base_path.clone();
+    let file_path = format!("{}/public/FirstImagesOfAll/{}", base_path, image_name);
+    if Path::new(&file_path).exists() {
+        match fs::read(&file_path) {
+            Ok(image_bytes) => {
+                let mut headers = HeaderMap::new();
+                headers.insert("Content-Type", "image/png".parse().unwrap());
+                headers.insert(
+                    "Content-Disposition",
+                    format!("inline; filename=\"{}.png\"", image_name)
+                        .parse()
+                        .unwrap(),
+                );
+                (StatusCode::OK, headers, image_bytes).into_response()
+            }
+            Err(_) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json("Failed to read profile picture".to_string()),
+            )
+                .into_response(),
+        }
+    } else {
+        (
+            StatusCode::NOT_FOUND,
+            Json("Profile picture not found".to_string()),
+        )
+            .into_response()
     }
 }
 
@@ -127,7 +167,7 @@ pub async fn insert_anilist_book(
     {
         Ok(pool) => pool,
         Err(_) => {
-            eprintln!("Error getting database pool");
+            error!("Error getting database pool");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
@@ -136,7 +176,7 @@ pub async fn insert_anilist_book(
     let rows = match sqlx::query(query).fetch_all(&pool).await {
         Ok(rows) => rows,
         Err(err) => {
-            eprintln!("Error executing query: {}", err);
+            error!("Error executing query: {}", err);
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
@@ -147,7 +187,7 @@ pub async fn insert_anilist_book(
         let el: Value = match serde_json::from_str(&title) {
             Ok(json) => json,
             Err(err) => {
-                eprintln!("Error parsing JSON: {}", err);
+                error!("Error parsing JSON: {}", err);
                 continue;
             }
         };
@@ -188,11 +228,11 @@ pub async fn insert_anilist_book(
 
     match sqlx::query(&insert_query).execute(&pool).await {
         Ok(_) => {
-            println!("Book inserted successfully");
+            info!("Book inserted successfully");
             StatusCode::OK.into_response()
         }
         Err(err) => {
-            eprintln!("Error inserting book: {}", err);
+            error!("Error inserting book: {}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
@@ -236,7 +276,7 @@ pub async fn insert_marvel_book(
     {
         Ok(pool) => pool,
         Err(_) => {
-            eprintln!("Error getting database pool");
+            error!("Error getting database pool");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
@@ -283,7 +323,7 @@ pub async fn insert_marvel_book(
                 );
 
                 if let Err(err) = sqlx::query(&insert_query).execute(&pool).await {
-                    eprintln!("Error inserting book: {}", err);
+                    error!("Error inserting book: {}", err);
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
 
@@ -308,7 +348,7 @@ pub async fn insert_marvel_book(
                         );
 
                         if let Err(err) = sqlx::query(&creator_query).execute(&pool).await {
-                            eprintln!("Error inserting creator: {}", err);
+                            error!("Error inserting creator: {}", err);
                         }
                     }
                 }
@@ -335,7 +375,7 @@ pub async fn insert_marvel_book(
                         );
 
                         if let Err(err) = sqlx::query(&character_query).execute(&pool).await {
-                            eprintln!("Error inserting character: {}", err);
+                            error!("Error inserting character: {}", err);
                         }
                     }
                 }
@@ -347,7 +387,7 @@ pub async fn insert_marvel_book(
                 );
 
                 if let Err(err) = sqlx::query(&default_query).execute(&pool).await {
-                    eprintln!("Error inserting default book: {}", err);
+                    error!("Error inserting default book: {}", err);
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
             }
@@ -355,11 +395,11 @@ pub async fn insert_marvel_book(
             (StatusCode::OK, response).into_response()
         }
         Err(err) => {
-            eprintln!("Error fetching Marvel API data: {}", err);
+            error!("Error fetching Marvel API data: {}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
         _ => {
-            eprintln!("Unexpected error occurred");
+            error!("Unexpected error occurred");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
@@ -397,8 +437,8 @@ pub async fn insert_googlebooks_book(
     .await
     {
         Ok(pool) => pool,
-        Err(_) => {
-            eprintln!("Error getting database pool");
+        Err(err) => {
+            error!("Error getting database pool: {}", err);
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
@@ -451,7 +491,7 @@ pub async fn insert_googlebooks_book(
                 );
 
                 if let Err(err) = sqlx::query(&insert_query).execute(&pool).await {
-                    eprintln!("Error inserting book: {}", err);
+                    error!("Error inserting book: {}", err);
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
 
@@ -463,7 +503,7 @@ pub async fn insert_googlebooks_book(
                     );
 
                     if let Err(err) = sqlx::query(&author_query).execute(&pool).await {
-                        eprintln!("Error inserting author: {}", err);
+                        error!("Error inserting author: {}", err);
                     }
                 }
             } else {
@@ -474,7 +514,7 @@ pub async fn insert_googlebooks_book(
                 );
 
                 if let Err(err) = sqlx::query(&default_query).execute(&pool).await {
-                    eprintln!("Error inserting default book: {}", err);
+                    error!("Error inserting default book: {}", err);
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
             }
@@ -482,11 +522,11 @@ pub async fn insert_googlebooks_book(
             (StatusCode::OK, response).into_response()
         }
         Err(err) => {
-            eprintln!("Error fetching Google Books API data: {}", err);
+            error!("Error fetching Google Books API data: {}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
         _ => {
-            eprintln!("Unexpected error occurred");
+            error!("Unexpected error occurred");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
@@ -525,7 +565,7 @@ pub async fn insert_olib_book(
     {
         Ok(pool) => pool,
         Err(_) => {
-            eprintln!("Error getting database pool");
+            error!("Error getting database pool");
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
@@ -583,7 +623,7 @@ pub async fn insert_olib_book(
                         );
 
                         if let Err(err) = sqlx::query(&insert_query).execute(&pool).await {
-                            eprintln!("Error inserting book: {}", err);
+                            error!("Error inserting book: {}", err);
                             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                         }
 
@@ -595,18 +635,18 @@ pub async fn insert_olib_book(
                             );
 
                             if let Err(err) = sqlx::query(&author_query).execute(&pool).await {
-                                eprintln!("Error inserting author: {}", err);
+                                error!("Error inserting author: {}", err);
                             }
                         }
                         let response = serde_json::to_string(&book).unwrap_or_default();
                         (StatusCode::OK, response).into_response()
                     }
                     Err(err) => {
-                        eprintln!("Error fetching book details: {}", err);
+                        error!("Error fetching book details: {}", err);
                         StatusCode::INTERNAL_SERVER_ERROR.into_response()
                     }
                     _ => {
-                        eprintln!("Unexpected error occurred while fetching book details");
+                        error!("Unexpected error occurred while fetching book details");
                         StatusCode::INTERNAL_SERVER_ERROR.into_response()
                     }
                 }
@@ -618,7 +658,7 @@ pub async fn insert_olib_book(
                 );
 
                 if let Err(err) = sqlx::query(&default_query).execute(&pool).await {
-                    eprintln!("Error inserting default book: {}", err);
+                    error!("Error inserting default book: {}", err);
                     return StatusCode::INTERNAL_SERVER_ERROR.into_response();
                 }
                 let response = serde_json::to_string(&cdata).unwrap_or_default();
@@ -626,11 +666,11 @@ pub async fn insert_olib_book(
             }
         }
         Err(err) => {
-            eprintln!("Error fetching Open Library API data: {}", err);
+            error!("Error fetching Open Library API data: {}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
         _ => {
-            eprintln!("Unexpected error occurred");
+            error!("Unexpected error occurred");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
@@ -679,7 +719,7 @@ pub async fn refresh_meta_controller(
                 )
                 .await
                 {
-                    eprintln!("Error handling Marvel book: {}", e);
+                    error!("Error handling Marvel book: {}", e);
                 }
             } else {
                 if let Err(e) = handle_marvel_series(
@@ -692,7 +732,7 @@ pub async fn refresh_meta_controller(
                 )
                 .await
                 {
-                    eprintln!("Error handling Marvel series: {}", e);
+                    error!("Error handling Marvel series: {}", e);
                 }
             }
         }
@@ -702,7 +742,7 @@ pub async fn refresh_meta_controller(
                     handle_anilist_series(&pool, &payload.id, payload.provider, &payload.token)
                         .await
                 {
-                    eprintln!("Error handling Anilist series: {}", e);
+                    error!("Error handling Anilist series: {}", e);
                 }
             }
         }
@@ -710,14 +750,14 @@ pub async fn refresh_meta_controller(
             if let Err(e) =
                 handle_openlibrary_book(&pool, &payload.id, payload.provider, &payload.token).await
             {
-                eprintln!("Error handling OpenLibrary book: {}", e);
+                error!("Error handling OpenLibrary book: {}", e);
             }
         }
         4 => {
             if let Err(e) =
                 handle_google_book(&pool, &payload.id, payload.provider, &payload.token).await
             {
-                eprintln!("Error handling Google Book: {}", e);
+                error!("Error handling Google Book: {}", e);
             }
         }
         _ => return StatusCode::BAD_REQUEST.into_response(),
@@ -733,11 +773,11 @@ pub async fn get_list_of_files_and_folders_controller(
     let dir = crate::utils::replace_html_address_path(&path);
     match get_list_of_files_and_folders(dir).await {
         Ok(response) => {
-            println!("List of files and folders fetched successfully");
+            info!("List of files and folders fetched successfully");
             (StatusCode::OK, response).into_response()
         }
         Err(e) => {
-            eprintln!("Error fetching list of files and folders: {}", e);
+            error!("Error fetching list of files and folders: {}", e);
             let error_response =
                 serde_json::json!({"error": "Error fetching list of files and folders"});
             (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
@@ -753,7 +793,7 @@ pub async fn get_list_of_folders_controller(
     match get_list_of_folders(dir).await {
         Ok(response) => (StatusCode::OK, response).into_response(),
         Err(e) => {
-            eprintln!("Error fetching list of folders: {}", e);
+            error!("Error fetching list of folders: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error fetching list of folders",
@@ -776,7 +816,7 @@ pub async fn scrape_images_from_webpage_controller(
     match crate::services::archive_service::scrape_images_from_webpage(&*url, &*dir).await {
         Ok(response) => (StatusCode::OK, response).into_response(),
         Err(e) => {
-            eprintln!("Error scraping images from webpage: {}", e);
+            error!("Error scraping images from webpage: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Error scraping images from webpage",
