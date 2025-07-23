@@ -226,7 +226,11 @@ pub async fn update_db_body(
             .map(|v| v.as_str().unwrap_or_default().to_string())
             .collect()
     } else {
-        vec![payload["value"].as_str().unwrap_or_default().to_string()]
+        vec![match &payload["value"] {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Bool(b) => b.to_string(),
+            _ => payload["value"].to_string(),
+        }]
     };
 
     crate::repositories::database_repo::update_db(
