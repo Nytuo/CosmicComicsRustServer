@@ -1,4 +1,5 @@
 use crate::services::profile_service::resolve_token;
+use crate::utils::replace_html_address_path;
 use crate::{
     routes_manager::AppState,
     utils::{darken_color, is_light_color},
@@ -122,7 +123,8 @@ pub async fn download_file(
     let state = state.lock().await;
     let config = state.config.lock().await;
     let base_path = &config.base_path;
-    let full_path = format!("{}/{}", base_path, path);
+    let decoded_path = replace_html_address_path(&path);
+    let full_path = format!("{}", decoded_path);
     let path_obj = Path::new(&full_path);
 
     if path_obj.exists() {
@@ -183,10 +185,12 @@ pub async fn download_file(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
 pub struct Bookmark {
     pub id_bookmark: i32,
     pub book_id: String,
     pub path: String,
+    #[serde(rename = "page")]
     pub page: i32,
 }
 
@@ -239,9 +243,9 @@ pub async fn get_bookmarks(
     let bookmarks: Vec<Bookmark> = stmt
         .iter()
         .map(|row| Bookmark {
-            id_bookmark: row.get("id_bookmark"),
-            book_id: row.get("book_id"),
-            path: row.get("path"),
+            id_bookmark: row.get("ID_BOOKMARK"),
+            book_id: row.get("BOOK_ID"),
+            path: row.get("PATH"),
             page: row.get("page"),
         })
         .collect();

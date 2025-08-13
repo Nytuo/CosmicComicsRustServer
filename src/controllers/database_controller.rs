@@ -243,8 +243,8 @@ pub async fn update_db_body(
         &where_value,
     )
     .await
-    .unwrap_or_else(|_| {
-        eprintln!("Failed to update DB");
+    .unwrap_or_else(|e| {
+        eprintln!("Failed to update DB: {}", e);
         (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
     });
 
@@ -298,7 +298,7 @@ pub async fn update_db_one_for_all(
     });
 
     for book in book_list {
-        let path = book.get("PATH").unwrap().to_string().to_lowercase();
+        let path = book.get("PATH").unwrap().to_string();
         let title_json = serde_json::from_str::<Value>(&title).unwrap();
         let en_title = title_json["english"]
             .as_str()
@@ -306,7 +306,7 @@ pub async fn update_db_one_for_all(
             .to_string()
             .to_lowercase()
             .replace('"', "");
-        if path.contains(&en_title) {
+        if path.to_lowercase().contains(&en_title) {
             let asso = json!({
                 A: 1,
                 W1: 0,

@@ -1,14 +1,15 @@
+use crate::routes_manager::AppState;
 use anyhow::Context;
+use axum::body::Body;
 use axum::{Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
 use futures_util::TryStreamExt;
 use multer::Multipart;
-use std::{convert::Infallible, fs, sync::Arc};
 use std::path::PathBuf;
-use axum::body::Body;
+use std::{convert::Infallible, fs, sync::Arc};
 use tokio::{fs::File, io::AsyncWriteExt};
-use tower_http::limit::RequestBodyLimitLayer;
 use tokio_util::io::ReaderStream;
-use crate::routes_manager::AppState;
+use tower_http::limit::RequestBodyLimitLayer;
+use tracing::{info, warn};
 
 use crate::services::archive_service::unzip_and_process;
 use crate::services::profile_service::resolve_token;
@@ -136,7 +137,7 @@ pub async fn view_current_controller(
     let list_of_images = get_list_of_images(current_book_path.as_ref(), VALID_IMAGE_EXTENSION);
 
     if list_of_images.is_empty() {
-        return (StatusCode::NOT_FOUND, "No images found").into_response();
+        return (StatusCode::OK, "false").into_response();
     }
 
     let response = match serde_json::to_string(&list_of_images) {
@@ -159,9 +160,8 @@ pub async fn isDir(
 ) -> impl IntoResponse {
     let state = state.lock().await;
     let config = state.config.lock().await;
-    let base_path = &config.base_path;
 
-    let full_path = format!("{}/{}", base_path, path);
+    let full_path = format!("{}", path);
     let is_dir = tokio::fs::metadata(&full_path)
         .await
         .map(|m| m.is_dir())
@@ -181,7 +181,10 @@ pub async fn get_config_controller(
         Some(t) => t,
         None => return (StatusCode::UNAUTHORIZED, "Invalid token").into_response(),
     };
-    let profile = format!("{}/profiles/{}/config.json", config.base_path, resolved_token);
+    let profile = format!(
+        "{}/profiles/{}/config.json",
+        config.base_path, resolved_token
+    );
     match tokio::fs::read_to_string(&profile).await {
         Ok(content) => (StatusCode::OK, content).into_response(),
         Err(e) => {
@@ -205,7 +208,7 @@ pub async fn read_image(
 
     let met = headers.get("met").and_then(|v| v.to_str().ok());
     let page = headers.get("page").and_then(|v| v.to_str().ok());
-    
+
     let file_path = match met {
         Some("DL") => {
             let path = headers.get("path").and_then(|v| v.to_str().ok());
@@ -213,7 +216,7 @@ pub async fn read_image(
                 (Some(p), Some(pg)) => Some(PathBuf::from(format!("{}/{}", p, pg))),
                 _ => None,
             }
-        },
+        }
         Some("CLASSIC") => {
             let token = headers.get("token").and_then(|v| v.to_str().ok());
             let token_unwrapped = token.unwrap_or("");
@@ -227,10 +230,10 @@ pub async fn read_image(
                         "{}/profiles/{}/current_book/{}",
                         base_path, resolved_token, pg
                     )))
-                },
+                }
                 _ => None,
             }
-        },
+        }
         _ => None,
     };
 
@@ -264,12 +267,19 @@ pub async fn viewer_view_controller(
     let path = headers.get("path").and_then(|v| v.to_str().ok());
     if let Some(path) = path {
         let param = replace_html_address_path(path);
-        let tosend = get_list_of_images((&param).as_ref(), crate::utils::VALID_IMAGE_EXTENSION);
+        info!("Received path: {}", param);
+        let mut tosend = get_list_of_images((&param).as_ref(), crate::utils::VALID_IMAGE_EXTENSION);
+        tosend.sort();
+        info!("Sending list of images: {:?}", tosend);
         return match serde_json::to_string(&tosend) {
             Ok(json) => (StatusCode::OK, json).into_response(),
             Err(e) => {
                 eprintln!("Error serializing JSON: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "Failed to serialize JSON").into_response()
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to serialize JSON",
+                )
+                    .into_response()
             }
         };
     }
@@ -290,7 +300,10 @@ pub async fn view_current_page_controller(
     };
 
     let current_book_path = format!("{}/profiles/{}/current_book", base_path, resolved_token);
-    let list_of_images = get_list_of_images((&current_book_path).as_ref(), crate::utils::VALID_IMAGE_EXTENSION);
+    let list_of_images = get_list_of_images(
+        (&current_book_path).as_ref(),
+        crate::utils::VALID_IMAGE_EXTENSION,
+    );
 
     if let Some(image) = list_of_images.get(page) {
         let image_path = format!("{}/{}", current_book_path, image);
@@ -306,10 +319,8 @@ pub async fn view_exist_controller(
 ) -> impl IntoResponse {
     let state = state.lock().await;
     let config = state.config.lock().await;
-    let base_path = &config.base_path;
 
     let full_path = replace_html_address_path(&path);
-    let full_path = format!("{}/{}", base_path, full_path);
 
     let exists = tokio::fs::metadata(&full_path).await.is_ok();
     println!("{}", exists);
@@ -323,13 +334,19 @@ pub async fn view_read_file_controller(
 ) -> impl IntoResponse {
     let state = state.lock().await;
     let config = state.config.lock().await;
-    let base_path = &config.base_path;
 
     let sanitized_path = replace_html_address_path(&path);
-    let full_path = format!("{}/{}", base_path, sanitized_path);
+    let full_path = format!("{}", sanitized_path);
 
     match fs::read_to_string(&full_path) {
-        Ok(content) => (StatusCode::OK, serde_json::to_string(&content).unwrap_or_default()).into_response(),
+        Ok(content) => {
+            let trimmed = content.trim_end();
+            (
+                StatusCode::OK,
+                serde_json::to_string(trimmed).unwrap_or_default(),
+            )
+                .into_response()
+        }
         Err(e) => {
             eprintln!("Error reading file: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read file").into_response()
