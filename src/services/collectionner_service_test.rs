@@ -123,13 +123,19 @@ mod tests {
 
         assert!(result.is_ok());
     } */
+    use sqlx::sqlite::{SqliteConnectOptions};
 
     #[tokio::test]
     async fn test_handle_anilist_series_writes_to_db() {
-        let pool = SqlitePoolOptions::new().connect(":memory:").await.unwrap();
+        let mut opts: SqliteConnectOptions = ":memory:".parse().unwrap();
+        opts = opts.foreign_keys(false);
+        let pool = SqlitePool::connect_with(opts).await.unwrap();
 
         sqlx::query("CREATE TABLE IF NOT EXISTS Series (ID_Series TEXT PRIMARY KEY NOT NULL UNIQUE,title TEXT NOT NULL,note INTEGER,statut TEXT,start_date TEXT,end_date TEXT,description TEXT,Score INTEGER,genres TEXT,cover TEXT,BG TEXT,CHARACTERS TEXT,TRENDING INTEGER,STAFF TEXT,SOURCE TEXT,volumes INTEGER,chapters INTEGER,favorite BOOLEAN NOT NULL,PATH TEXT NOT NULL,lock BOOLEAN DEFAULT false NOT NULL);").execute(&pool).await.unwrap();
-
+        sqlx::query("CREATE TABLE IF NOT EXISTS Creators (ID_CREATOR TEXT PRIMARY KEY NOT NULL UNIQUE,name TEXT,image TEXT,description TEXT,url TEXT);").execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS Characters (ID_CHAR TEXT PRIMARY KEY NOT NULL UNIQUE,name TEXT,image TEXT,description TEXT,url TEXT);").execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS variants (ID_variant TEXT PRIMARY KEY NOT NULL UNIQUE,name TEXT,image TEXT,url TEXT,series TEXT,FOREIGN KEY (series) REFERENCES Series (ID_Series));").execute(&pool).await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS relations (ID_variant TEXT PRIMARY KEY NOT NULL UNIQUE,name TEXT,image TEXT,description TEXT,url TEXT,series TEXT,FOREIGN KEY (series) REFERENCES Series (ID_Series));").execute(&pool).await.unwrap();
         sqlx::query("INSERT INTO Series (ID_Series, title, note, statut, start_date, end_date, description, Score, genres, cover, BG, CHARACTERS, TRENDING, STAFF, SOURCE, volumes, chapters, favorite, PATH) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
     .bind("30042")
     .bind("Test Title")
@@ -157,6 +163,7 @@ mod tests {
         let result = handle_anilist_series(&pool, "30042", 2, "dummy_token").await;
         assert!(result.is_ok());
 
+        //check series existance
         let row = sqlx::query("SELECT title, description FROM Series WHERE ID_Series = ?")
             .bind("30042")
             .fetch_one(&pool)
@@ -168,6 +175,61 @@ mod tests {
 
         assert!(!title.is_empty());
         assert!(!description.is_empty());
+
+        //check character existance
+        let row = sqlx::query("SELECT * FROM Characters WHERE ID_CHAR = ?")
+            .bind("913_2")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let name: String = row.get("name");
+        let image: String = row.get("image");
+        let description: String = row.get("description");
+        let url: String = row.get("url");
+        assert!(!name.is_empty());
+        assert!(name.eq("Vegeta"));
+        assert!(!image.is_empty());
+        assert!(!description.is_empty());
+        assert!(!url.is_empty());
+
+        //check creators existance
+
+        let row = sqlx::query("SELECT * FROM Creators WHERE ID_CREATOR = ?")
+            .bind("96901_2")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let name: String = row.get("name");
+        let image: String = row.get("image");
+        let description: String = row.get("description");
+        let url: String = row.get("url");
+        assert!(!name.is_empty());
+        assert!(name.eq("Akira Toriyama"));
+        assert!(!image.is_empty());
+        assert!(!description.is_empty());
+        assert!(!url.is_empty());
+
+        //check for relations existance
+        let row = sqlx::query("SELECT * FROM Relations WHERE ID_variant = ?")
+            .bind("223_2")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+        let name: String = row.get("name");
+        let image: String = row.get("image");
+        let description: String = row.get("description");
+        let url: String = row.get("url");
+        let series_u:String = row.get("series");
+        assert!(!name.is_empty());
+        assert!(name.eq("Dragon Ball"));
+        assert!(!image.is_empty());
+        assert!(!description.is_empty());
+        assert!(!url.is_empty());
+        assert!(!series_u.is_empty());
+        assert!(series_u.contains("30042"));
     }
 
     #[tokio::test]

@@ -47,6 +47,7 @@ pub struct Date {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Image {
     pub large: Option<String>,
+    pub medium: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -61,6 +62,7 @@ pub struct StaffNode {
     pub name: Name,
     pub image: Option<Image>,
     pub description: Option<String>,
+    #[serde(rename = "siteUrl")]
     pub site_url: Option<String>,
 }
 
@@ -81,6 +83,7 @@ pub struct CharacterNode {
     pub name: Name,
     pub image: Option<Image>,
     pub description: Option<String>,
+    #[serde(rename = "siteUrl")]
     pub site_url: Option<String>,
 }
 
@@ -99,9 +102,11 @@ pub struct Relations {
 pub struct RelationNode {
     pub id: i32,
     pub title: Title,
+    #[serde(rename = "coverImage")]
     pub cover_image: Option<Image>,
     pub r#type: Option<String>,
     pub format: Option<String>,
+    pub relation_type: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -477,57 +482,55 @@ pub async fn api_anilist_get_by_id(id: &str) -> Result<Option<Media>, reqwest::E
     let media = media_response.data.Media;
     let mut response: Media = media.clone();
 
-    let staff_object = media.staff.nodes.clone();
-    let characters_object = media.characters.nodes.clone();
-    let relations_nodes = media.relations.nodes.clone();
-    let relations_edges = media.relations.edges.clone();
+    // let relations_nodes = media.relations.nodes.clone();
+    // let relations_edges = media.relations.edges.clone();
 
-    let mut relations_object = Vec::new();
-    if let (nodes, edges) = (relations_nodes, relations_edges) {
-        for (i, node) in nodes.iter().enumerate() {
-            let mut relation = node.clone();
-            if let Some(relation_type) = edges.get(i).and_then(|edge| edge.relation_type.as_ref()) {
-                relation.r#type = Some(relation_type.clone());
-            }
-            relations_object.push(relation);
-        }
-    }
-    response.relations.nodes = relations_object;
+    // let mut relations_object = Vec::new();
+    // if let (nodes, edges) = (relations_nodes, relations_edges) {
+    //     for (i, node) in nodes.iter().enumerate() {
+    //         let mut relation = node.clone();
+    //         if let Some(relation_type) = edges.get(i).and_then(|edge| edge.relation_type.as_ref()) {
+    //             relation.r#type = Some(relation_type.clone());
+    //         }
+    //         relations_object.push(relation);
+    //     }
+    // }
+    // response.relations.nodes = relations_object;
 
-    let staff_nodes = media.staff.nodes.clone();
+    // let staff_nodes = media.staff.nodes.clone();
 
-    if !staff_nodes.is_empty() {
-        let mod_staff_nodes: Vec<StaffNode> = staff_nodes
-            .into_iter()
-            .map(|staff| {
-                let mut new_staff = serde_json::to_value(&staff).unwrap();
-                new_staff
-                    .as_object_mut()
-                    .unwrap()
-                    .retain(|key, _| key == "id" || key == "name");
-                serde_json::from_value(new_staff).unwrap_or(staff)
-            })
-            .collect();
+    // if !staff_nodes.is_empty() {
+    //     let mod_staff_nodes: Vec<StaffNode> = staff_nodes
+    //         .into_iter()
+    //         .map(|staff| {
+    //             let mut new_staff = serde_json::to_value(&staff).unwrap();
+    //             new_staff
+    //                 .as_object_mut()
+    //                 .unwrap()
+    //                 .retain(|key, _| key == "id" || key == "name");
+    //             serde_json::from_value(new_staff).unwrap_or(staff)
+    //         })
+    //         .collect();
 
-        response.staff.nodes = mod_staff_nodes;
-    }
+    //     response.staff.nodes = mod_staff_nodes;
+    // }
 
-    if !media.characters.nodes.is_empty() {
-        let mod_character_nodes: Vec<CharacterNode> = media
-            .characters
-            .nodes
-            .iter()
-            .map(|character| {
-                let mut new_character = serde_json::to_value(character).unwrap();
-                new_character
-                    .as_object_mut()
-                    .unwrap()
-                    .retain(|key, _| key == "id" || key == "name");
-                serde_json::from_value(new_character).unwrap_or_else(|_| character.clone())
-            })
-            .collect();
-        response.characters.nodes = mod_character_nodes;
-    }
+    // if !media.characters.nodes.is_empty() {
+    //     let mod_character_nodes: Vec<CharacterNode> = media
+    //         .characters
+    //         .nodes
+    //         .iter()
+    //         .map(|character| {
+    //             let mut new_character = serde_json::to_value(character).unwrap();
+    //             new_character
+    //                 .as_object_mut()
+    //                 .unwrap()
+    //                 .retain(|key, _| key == "id" || key == "name");
+    //             serde_json::from_value(new_character).unwrap_or_else(|_| character.clone())
+    //         })
+    //         .collect();
+    //     response.characters.nodes = mod_character_nodes;
+    // }
 
     return Ok(Some(response));
 }

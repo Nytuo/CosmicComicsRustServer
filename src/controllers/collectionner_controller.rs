@@ -14,6 +14,7 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
+use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::Row;
@@ -704,6 +705,11 @@ pub async fn refresh_meta_controller(
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
 
+    let mut sanitized_id = payload.id.trim().to_string();
+    sanitized_id = sanitized_id.replace("'", "");
+
+    info!("Refresh Metadata for {} {} for provider {}",sanitized_id, payload.item_type, payload.provider);
+
     match payload.provider {
         1 => {
             let marvel_pub_api_key = state.creds.lock().await.marvel_public_key.clone();
@@ -711,7 +717,7 @@ pub async fn refresh_meta_controller(
             if payload.item_type == "book" {
                 if let Err(e) = handle_marvel_book(
                     &pool,
-                    &payload.id,
+                    &sanitized_id,
                     payload.provider,
                     &payload.token,
                     marvel_priv_api_key.clone(),
@@ -724,7 +730,7 @@ pub async fn refresh_meta_controller(
             } else {
                 if let Err(e) = handle_marvel_series(
                     &pool,
-                    &payload.id,
+                    &sanitized_id,
                     payload.provider,
                     &payload.token,
                     marvel_priv_api_key.clone(),
@@ -739,7 +745,7 @@ pub async fn refresh_meta_controller(
         2 => {
             if payload.item_type != "book" {
                 if let Err(e) =
-                    handle_anilist_series(&pool, &payload.id, payload.provider, &payload.token)
+                    handle_anilist_series(&pool, &sanitized_id, payload.provider, &payload.token)
                         .await
                 {
                     error!("Error handling Anilist series: {}", e);
@@ -748,14 +754,14 @@ pub async fn refresh_meta_controller(
         }
         3 => {
             if let Err(e) =
-                handle_openlibrary_book(&pool, &payload.id, payload.provider, &payload.token).await
+                handle_openlibrary_book(&pool, &sanitized_id, payload.provider, &payload.token).await
             {
                 error!("Error handling OpenLibrary book: {}", e);
             }
         }
         4 => {
             if let Err(e) =
-                handle_google_book(&pool, &payload.id, payload.provider, &payload.token).await
+                handle_google_book(&pool, &sanitized_id, payload.provider, &payload.token).await
             {
                 error!("Error handling Google Book: {}", e);
             }

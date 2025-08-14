@@ -1,4 +1,4 @@
-use sqlx::sqlite::{SqlitePool, SqliteValueRef};
+use sqlx::sqlite::{SqlitePool, SqliteValueRef, SqliteConnectOptions};
 use sqlx::{Column, Executor, Row, TypeInfo, ValueRef, query};
 use std::collections::HashMap;
 use std::fs;
@@ -191,7 +191,6 @@ pub async fn make_db(profile_owner: &str, base_path: &str) -> Result<(), sqlx::E
 
     Ok(())
 }
-
 pub async fn get_db(
     forwho: &str,
     base_path: &str,
@@ -202,10 +201,14 @@ pub async fn get_db(
     }
 
     let db_path = format!("{}/profiles/{}/CosmicComics.db", base_path, forwho);
-    let pool = SqlitePool::connect(&format!("sqlite://{}", db_path)).await?;
+    let mut opts: SqliteConnectOptions = format!("sqlite://{}", db_path).parse()?;
+    opts = opts.foreign_keys(false);
+    let pool = SqlitePool::connect_with(opts).await?;
     opened_db.insert(forwho.to_string(), pool.clone());
     Ok(pool)
 }
+
+use sqlx::{Sqlite, QueryBuilder};
 
 pub async fn update_db(
     db_pool: &SqlitePool,
@@ -216,35 +219,62 @@ pub async fn update_db(
     condition_column: &str,
     condition_value: &str,
 ) -> Result<(), sqlx::Error> {
-    if update_type == "edit" {
-        let mut updates = Vec::new();
-        for (i, column) in columns.iter().enumerate() {
-            let value = values[i].replace("'", "''").replace("\"", "\\\"");
-            updates.push(format!("{} = '{}'", column, value));
-        }
-        let update_query = format!(
-            "UPDATE {} SET {} WHERE {} = '{}';",
-            table,
-            updates.join(", "),
-            condition_column,
-            condition_value
+    if update_type == "edit" && columns.len() != values.len() {
+        eprintln!(
+            "Error: columns and values length mismatch (columns: {}, values: {})",
+            columns.len(),
+            values.len()
         );
-        println!("Executing query: {}", update_query);
-        if let Err(e) = query(&update_query).execute(db_pool).await {
-            eprintln!("Update query failed: {}", e);
-            return Err(e);
-        }
-    } else {
-        let update_query = format!(
-            "UPDATE {} SET {} = '{}' WHERE {} = '{}';",
-            table, columns[0], values[0], condition_column, condition_value
-        );
-        println!("Executing query: {}", update_query);
-        query(&update_query).execute(db_pool).await?;
-        println!("Updated {} in {} table", condition_value, table);
+        return Err(sqlx::Error::Protocol(
+            "columns and values length mismatch".into(),
+        ));
     }
-    Ok(())
+
+    let result = if update_type == "edit" {
+        if columns.is_empty() {
+            return Err(sqlx::Error::Protocol("no columns provided for edit".into()));
+        }
+
+        let mut qb = QueryBuilder::<Sqlite>::new("UPDATE ");
+        qb.push(table).push(" SET ");
+
+        for (i, (col, val)) in columns.iter().zip(values.iter()).enumerate() {
+            if i > 0 { qb.push(", "); }
+            qb.push(col).push(" = ").push_bind(val);
+        }
+
+        qb.push(" WHERE ").push(condition_column).push(" = ").push_bind(condition_value);
+        qb.build().execute(db_pool).await
+    } else {
+        let mut qb = QueryBuilder::<Sqlite>::new("UPDATE ");
+        qb.push(table)
+            .push(" SET ")
+            .push(&columns[0])
+            .push(" = ")
+            .push_bind(&values[0]);
+
+        qb.push(" WHERE ").push(condition_column).push(" = ").push_bind(condition_value);
+        qb.build().execute(db_pool).await
+    };
+
+    match result {
+        Ok(_) => {
+            if update_type != "edit" {
+                println!("Updated {} in {} table", condition_value, table);
+            }
+            Ok(())
+        }
+        Err(e) => {
+            eprintln!(
+                "Database update failed for table '{}', condition '{} = {}': {:?}",
+                table, condition_column, condition_value, e
+            );
+            Err(e)
+        }
+    }
 }
+
+
 
 pub async fn insert_into_db(
     db_pool: &SqlitePool,

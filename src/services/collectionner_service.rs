@@ -8,7 +8,9 @@ use chrono::Date;
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::{Row, SqlitePool};
+use tracing::info;
 use crate::repositories::database_repo::update_db;
+use crate::repositories::database_repo::insert_into_db;
 use crate::routes_manager::AppState;
 use crate::services::anilist_service::api_anilist_get_by_id;
 use crate::services::googlebooks_service::get_gbapi_comics_by_id;
@@ -52,6 +54,7 @@ pub async fn handle_marvel_book(pool: &SqlitePool, id: &str, provider: i32, toke
     update_db(pool,"edit", columns, values, "Books", "PATH", &book_path).await
 }
 
+use regex::Regex;
 pub async fn handle_marvel_series(pool: &SqlitePool, id: &str, provider: i32, token: &str,marvel_priv_key: String, marvel_pub_key: String) -> Result<(), sqlx::Error> {
     let row = sqlx::query("SELECT * FROM Series WHERE ID_Series = ?")
         .bind(id)
@@ -59,7 +62,9 @@ pub async fn handle_marvel_series(pool: &SqlitePool, id: &str, provider: i32, to
         .await?;
 
     let path: String = row.try_get("PATH")?;
-    let res2 = get_marvel_api_series_by_id(id, &*marvel_priv_key, &*marvel_pub_key).await.map_err(|e| sqlx::Error::Protocol(format!("Marvel API error: {}", e)))?;
+    let regex = Regex::new(r"(\d+)_\d+").unwrap();
+    let sanitized_id = regex.replace_all(&id, "$1").to_string();
+    let res2 = get_marvel_api_series_by_id(&sanitized_id, &*marvel_priv_key, &*marvel_pub_key).await.map_err(|e| sqlx::Error::Protocol(format!("Marvel API error: {}", e)))?;
 
     let mut asso = serde_json::Map::new();
     asso.insert("title".to_string(), json!(res2.title.replace("'", "''")));
@@ -88,10 +93,14 @@ pub async fn handle_anilist_series(pool: &SqlitePool, id: &str, provider: i32, t
         .await?;
 
     let path: String = row.try_get("PATH")?;
-    let res2 = api_anilist_get_by_id(id).await.map_err(|e| sqlx::Error::Protocol(format!("Anilist API error: {}", e)))?;
+    let regex = Regex::new(r"(\d+)_\d+").unwrap();
+    let sanitized_id = regex.replace_all(&id, "$1").to_string();
+    let res2 = api_anilist_get_by_id(&sanitized_id).await.map_err(|e| sqlx::Error::Protocol(format!("Anilist API error: {}", e)))?;
     let result = res2.unwrap_or_else(|| {
         panic!("No media found for ID: {}", id);
     });
+
+    info!("Anilist Refresh Meta : {}", json!(result.title));
 
     let mut asso = serde_json::Map::new();
     asso.insert("title".to_string(), json!(result.title));
@@ -99,8 +108,8 @@ pub async fn handle_anilist_series(pool: &SqlitePool, id: &str, provider: i32, t
     asso.insert("description".to_string(), json!(result.description.unwrap_or_default().replace("'", "''")));
     asso.insert("start_date".to_string(), json!(result.start_date));
     asso.insert("end_date".to_string(), json!(result.end_date));
-    asso.insert("CHARACTERS".to_string(), json!(result.characters));
-    asso.insert("STAFF".to_string(), json!(result.staff));
+    asso.insert("CHARACTERS".to_string(), json!(result.characters.nodes));
+    asso.insert("STAFF".to_string(), json!(result.staff.nodes));
     asso.insert("SOURCE".to_string(), json!(result.site_url));
     asso.insert("BG".to_string(), json!(result.banner_image));
     asso.insert("volumes".to_string(), json!(result.volumes));
@@ -113,7 +122,80 @@ pub async fn handle_anilist_series(pool: &SqlitePool, id: &str, provider: i32, t
     let columns = asso.keys().cloned().collect::<Vec<String>>();
     let values = asso.values().cloned().map(|v| v.to_string()).collect::<Vec<String>>();
 
+    info!("Refresh Metadata : {:?}", asso);
+
     update_db(pool,"edit", columns, values, "Series", "PATH", &path).await;
+
+    let staff_object = result.staff.nodes.clone();
+    let characters_object = result.characters.nodes.clone();
+    let relations_nodes = result.relations.nodes.clone();
+    let relations_edges = result.relations.edges.clone();
+
+    let mut relations_object = Vec::new();
+    if let (nodes, edges) = (relations_nodes, relations_edges)
+    {
+        for (i, node) in nodes.iter().enumerate() {
+            let mut relation = node.clone();
+            if let Some(relation_type) =
+                edges.get(i).and_then(|edge| edge.relation_type.clone())
+            {
+                relation.relation_type = Some(json!(relation_type).to_string());
+            }
+            relations_object.push(relation);
+        }
+    }
+
+    for staff in staff_object {
+        let values_vec = vec![
+            (staff.id.to_string() + "_2"),
+            staff.name.full.as_ref().map(|s| s.replace("'", "''")).unwrap_or_default(),
+            staff.image.as_ref().and_then(|img| img.medium.as_ref()).map(|m| m.to_string()).unwrap_or_default(),
+            staff.description.as_ref().map(|d| d.replace("'", "''")).unwrap_or_default(),
+            staff.site_url.as_ref().map(|url| url.to_string()).unwrap_or_default(),
+        ];
+        insert_into_db(&pool, "Creators", Option::None, values_vec)
+            .await
+            .expect("Failed to insert into Staff");
+    }
+    for character in characters_object {
+        let values_vec = vec![
+            (character.id.to_string() + "_2"),
+            character.name.full.as_ref().map(|s| s.replace("'", "''")).unwrap_or_default(),
+            character.image.as_ref().and_then(|img| img.medium.as_ref()).map(|m| m.to_string()).unwrap_or_default(),
+            character.description.as_ref().map(|d| d.replace("'", "''")).unwrap_or_default(),
+            character.site_url.as_ref().map(|url| url.to_string()).unwrap_or_default(),
+        ];
+        insert_into_db(&pool, "Characters", Option::None, values_vec)
+            .await
+            .expect("Failed to insert into Characters");
+    }
+    for relation in relations_object {
+        let title = relation.title.english
+                .or_else(|| relation.title.romaji)
+                .map(|t| t.to_string().replace("'", "''"))
+                .unwrap_or_default();
+        let cover_image = relation.cover_image.as_ref()
+                .and_then(|img| img.large.as_ref())
+                .map(|l| l.to_string())
+                .unwrap_or_default();
+        let type_str = format!(
+                "{} / {} / {}",
+                relation.r#type.as_ref().map(|t| t.to_string()).unwrap_or_default(),
+                relation.relation_type.as_ref().map(|rt| rt.to_string()).unwrap_or_default(),
+                relation.format.as_ref().map(|f| f.to_string()).unwrap_or_default()
+            ).replace("'", "''");
+        let values_vec = vec![
+                (relation.id.to_string() + "_2"),
+                title,
+                cover_image,
+                type_str,
+                "null".to_string(),
+                (result.id.to_string() + "_2"),
+            ];
+        insert_into_db(&pool, "relations", Option::None, values_vec)
+            .await
+            .expect("Failed to insert into relations");
+    }
     Ok(())
 }
 
@@ -123,7 +205,9 @@ pub async fn handle_openlibrary_book(pool: &SqlitePool, id: &str, provider: i32,
         .fetch_one(pool)
         .await?;
     let path: String = row.try_get("PATH")?;
-    let res = get_olapi_comics_by_id(id).await.map_err(|e| sqlx::Error::Protocol(format!("Open Library API error: {}", e)))?;
+    let regex = Regex::new(r"(\d+)_\d+").unwrap();
+    let sanitized_id = regex.replace_all(&id, "$1").to_string();
+    let res = get_olapi_comics_by_id(&sanitized_id).await.map_err(|e| sqlx::Error::Protocol(format!("Open Library API error: {}", e)))?;
     let details = res.details;
 
     let mut asso = serde_json::Map::new();
@@ -151,7 +235,7 @@ pub async fn handle_openlibrary_book(pool: &SqlitePool, id: &str, provider: i32,
     asso.insert("collectedIssues".to_string(), json!("null"));
     asso.insert("variants".to_string(), json!("null"));
     asso.insert("collections".to_string(), json!("null"));
-    
+
     let columns = asso.keys().cloned().collect::<Vec<String>>();
     let values = asso.values().cloned().map(|v| v.to_string()).collect::<Vec<String>>();
 
@@ -164,7 +248,9 @@ pub async fn handle_google_book(pool: &SqlitePool, id: &str, provider: i32, toke
         .fetch_one(pool)
         .await?;
     let path: String = row.try_get("PATH")?;
-    let res = get_gbapi_comics_by_id(id).await.map_err(|e| sqlx::Error::Protocol(format!("Google Books API error: {}", e)))?;
+    let regex = Regex::new(r"(\d+)_\d+").unwrap();
+    let sanitized_id = regex.replace_all(&id, "$1").to_string();
+    let res = get_gbapi_comics_by_id(&sanitized_id).await.map_err(|e| sqlx::Error::Protocol(format!("Google Books API error: {}", e)))?;
 
     let mut asso = serde_json::Map::new();
     let price = res.saleInfo.unwrap().retailPrice.map(|p| p.amount).unwrap_or(0.0);
@@ -188,7 +274,7 @@ pub async fn handle_google_book(pool: &SqlitePool, id: &str, provider: i32, toke
     asso.insert("collectedIssues".to_string(), json!("null"));
     asso.insert("variants".to_string(), json!("null"));
     asso.insert("collections".to_string(), json!("null"));
-    
+
     let columns = asso.keys().cloned().collect::<Vec<String>>();
     let values = asso.values().cloned().map(|v| v.to_string()).collect::<Vec<String>>();
 
