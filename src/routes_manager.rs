@@ -9,10 +9,16 @@ use crate::endpoints::profile_endpoints::authentication_routes;
 use crate::endpoints::settings_endpoints::settings_routes;
 use crate::endpoints::viewer_endpoints::viewer_routes;
 use axum::Router;
-use axum::http::Request;
 use axum::middleware::from_fn;
-use axum::response::IntoResponse;
+use axum::{
+    body::Body,
+    http::{HeaderMap, Request},
+    middleware::Next,
+    response::IntoResponse,
+};
+use std::collections::HashSet;
 use std::sync::Arc;
+use tracing::info;
 
 pub struct AppState {
     pub config: Arc<tokio::sync::Mutex<AppConfig>>,
@@ -20,23 +26,80 @@ pub struct AppState {
     pub global_vars: Arc<tokio::sync::Mutex<AppGlobalVariables>>,
 }
 
-pub async fn log_request(
-    req: Request<axum::body::Body>,
-    next: axum::middleware::Next,
-) -> impl IntoResponse {
-    println!("[REQUEST] {} {}", req.method(), req.uri().path());
-    println!("[HEADERS]");
-    for (name, value) in req.headers().iter() {
-        println!("{}: {:?}", name, value);
-    }
+pub async fn log_request(req: Request<Body>, next: Next) -> impl IntoResponse {
     let (parts, body) = req.into_parts();
-    let bytes = axum::body::to_bytes(body, usize::MAX)
-        .await
-        .unwrap_or_default();
+    let limit: usize = parts
+        .headers
+        .get("x-limit")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("1024")
+        .parse()
+        .unwrap_or(1024);
+    let bytes = axum::body::to_bytes(body, limit).await.unwrap_or_default();
     let body_str = String::from_utf8_lossy(&bytes);
-    println!("[BODY] {}", body_str);
-    let req = Request::from_parts(parts, axum::body::Body::from(bytes));
+    let req = Request::from_parts(parts.clone(), Body::from(bytes.clone()));
+
+    let headers = extract_interesting_headers(&parts.headers);
+
+    info!(
+        method = ?parts.method,
+        path = %parts.uri.path(),
+        headers = ?headers,
+        body = %mask_body(&body_str),
+        "[REQUEST]"
+    );
+
     next.run(req).await
+}
+
+fn extract_interesting_headers(headers: &HeaderMap) -> Vec<(String, String)> {
+    let standard_headers: HashSet<&str> = [
+        "host",
+        "connection",
+        "upgrade-insecure-requests",
+        "user-agent",
+        "accept",
+        "accept-language",
+        "accept-encoding",
+        "cache-control",
+        "pragma",
+        "referer",
+        "cookie",
+        "content-length",
+        "content-type",
+        "origin",
+        "sec-fetch-site",
+        "sec-fetch-mode",
+        "sec-fetch-user",
+        "sec-fetch-dest",
+        "x-forwarded-for",
+        "x-forwarded-proto",
+        "x-real-ip",
+    ]
+    .into_iter()
+    .collect();
+
+    headers
+        .iter()
+        .filter_map(|(name, value)| {
+            let key = name.as_str().to_ascii_lowercase();
+            if !standard_headers.contains(key.as_str()) {
+                Some((key, value.to_str().unwrap_or("<invalid utf8>").to_string()))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn mask_body(body: &str) -> String {
+    if body.trim().is_empty() {
+        "<empty>".to_string()
+    } else if body.len() > 1000 {
+        format!("{}...[truncated]", &body[..1000])
+    } else {
+        body.to_string()
+    }
 }
 
 pub fn create_router(

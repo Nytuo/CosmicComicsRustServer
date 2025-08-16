@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-use std::{fs, path};
-use std::os::unix::fs::PermissionsExt;
-use futures_util::future::ok;
+use crate::repositories::database_repo::update_db;
 use sqlx::Row;
 use sqlx::SqlitePool;
-use tower::util::Optional;
-use crate::repositories::database_repo::update_db;
+use std::collections::HashMap;
+use std::os::unix::fs::PermissionsExt;
+use std::{fs, path};
+use tracing::{error, info};
 
 pub async fn get_books_with_blank_covers(
     db_pool: SqlitePool,
@@ -31,8 +30,6 @@ pub async fn fill_blank_images(
     valid_image_extensions: &[&str],
     output_dir: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let result: Vec<String> = Vec::new();
-
     let output_dir = if output_dir.is_some() {
         output_dir.unwrap()
     } else {
@@ -40,7 +37,7 @@ pub async fn fill_blank_images(
     };
     let books = crate::services::book_service::get_books_with_blank_covers(db_pool.clone()).await?;
     for book in books {
-        println!("Beginning fill_blank_images for: {}", book["NOM"]);
+        info!("Beginning fill_blank_images for: {}", book["NOM"]);
 
         let filename = book["ID_book"].clone();
         let path = book["PATH"].clone();
@@ -59,9 +56,9 @@ pub async fn fill_blank_images(
                 ext,
                 &filename,
             )
-                .await
+            .await
             {
-                println!("NOT SUPPORTED: {}", e);
+                error!("NOT SUPPORTED: {}", e);
                 continue;
             }
 
@@ -73,7 +70,7 @@ pub async fn fill_blank_images(
                     fs::set_permissions(path, permissions)?;
                 }
             }
-            
+
             let col_vec = vec!["URLCover".to_string()];
             let val_vec = vec![output_path.clone()];
 
@@ -86,18 +83,18 @@ pub async fn fill_blank_images(
                 "ID_book",
                 &filename,
             )
-                .await?;
+            .await?;
         }
     }
 
-    println!("Converting images in directory: {}", output_dir);
+    info!("Converting images in directory: {}", output_dir);
     crate::services::converter_service::convert_all_images_in_directory(
         output_dir.clone().as_str(),
         &output_dir,
         &valid_image_extensions,
         db_pool,
     )
-        .await?;
-    println!("Finished fill_blank_images");
+    .await?;
+    info!("Finished fill_blank_images");
     Ok(())
 }

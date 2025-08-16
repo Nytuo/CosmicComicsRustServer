@@ -2,6 +2,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use tracing::debug;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Media {
@@ -127,7 +128,8 @@ pub struct MediaResponse {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MediaData {
-    pub Media: Media,
+    #[serde(rename = "Media")]
+    pub media: Media,
 }
 
 pub async fn api_anilist_get(name: &str) -> Result<Option<HashMap<String, Value>>, reqwest::Error> {
@@ -476,11 +478,13 @@ pub async fn api_anilist_get_by_id(id: &str) -> Result<Option<Media>, reqwest::E
 
     let json_response: Value = response.json().await?;
 
-    println!("Response: {:?}", json_response);
+    debug!("Response: {:?}", json_response);
 
     let media_response: MediaResponse = serde_json::from_value(json_response).unwrap();
-    let media = media_response.data.Media;
-    let mut response: Media = media.clone();
+    let media = media_response.data.media;
+    let response: Media = media.clone();
+
+    //We do not have to modify the response object here but keeping it for now if rollback is needed
 
     // let relations_nodes = media.relations.nodes.clone();
     // let relations_edges = media.relations.edges.clone();

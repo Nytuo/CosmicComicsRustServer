@@ -1,10 +1,6 @@
+use crate::routes_manager::AppState;
 use crate::services::profile_service::resolve_token;
 use crate::utils::replace_html_address_path;
-use crate::{
-    routes_manager::AppState,
-    utils::{darken_color, is_light_color},
-};
-use axum::extract::Request;
 use axum::http::HeaderMap;
 use axum::{extract::State, response::IntoResponse};
 use reqwest::StatusCode;
@@ -15,7 +11,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::{env, fs, path::Path, sync::Arc};
 use tokio::sync::Mutex;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info};
 use zip::write::FileOptions;
 
 #[derive(Serialize)]
@@ -64,11 +60,15 @@ pub async fn get_null() -> impl IntoResponse {
         env::current_dir().unwrap().to_str().unwrap()
     );
     if !Path::new(&null_image).exists() {
+        error!("Default Image not found");
         return (StatusCode::NOT_FOUND, "Image not found").into_response();
     }
     let raw_img = match fs::read(&null_image) {
         Ok(data) => data,
-        Err(_) => return (StatusCode::NOT_FOUND, "Image not found").into_response(),
+        Err(_) => {
+            error!("Failed to read default image");
+            return (StatusCode::NOT_FOUND, "Image not found").into_response();
+        }
     };
     (StatusCode::OK, raw_img).into_response()
 }
@@ -81,6 +81,7 @@ pub async fn get_themes(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoR
 
     let themes_path = Path::new(&themes_dir);
     if !themes_path.exists() {
+        error!("Themes directory not found");
         return (StatusCode::NOT_FOUND, "Themes directory not found").into_response();
     }
     let mut themes_available = vec![];
@@ -93,6 +94,7 @@ pub async fn get_themes(State(state): State<Arc<Mutex<AppState>>>) -> impl IntoR
     }
     let themes_content = serde_json::to_string(&themes_available).unwrap_or_default();
     let themes_content = format!(r#"{{"themes":{}}}"#, themes_content);
+    info!("Themes available: {:?}", themes_available);
     (StatusCode::OK, themes_content).into_response()
 }
 
@@ -101,8 +103,6 @@ pub async fn get_status(
     axum::extract::Path((token, type_)): axum::extract::Path<(String, String)>,
 ) -> impl IntoResponse {
     let state = state.lock().await;
-    let config = state.config.lock().await;
-    let base_path = &config.base_path;
     let status_progress = state.global_vars.lock().await.progress_status.clone();
     let selected_status = status_progress
         .get(&token)
@@ -132,6 +132,7 @@ pub async fn download_file(
             let file_content = match fs::read(&full_path) {
                 Ok(content) => content,
                 Err(_) => {
+                    error!("Failed to read file: {}", full_path);
                     return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read file")
                         .into_response();
                 }
@@ -146,6 +147,7 @@ pub async fn download_file(
             let zip_file = match File::create(&zip_path) {
                 Ok(file) => file,
                 Err(_) => {
+                    error!("Failed to create zip file: {}", zip_path);
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "Failed to create zip file",
@@ -173,10 +175,12 @@ pub async fn download_file(
             let zip_content = match fs::read(&zip_path) {
                 Ok(content) => content,
                 Err(_) => {
+                    error!("Failed to read zip file: {}", zip_path);
                     return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read zip file")
                         .into_response();
                 }
             };
+            info!("Zip file created successfully");
             return (StatusCode::OK, zip_content).into_response();
         }
     }
@@ -249,6 +253,8 @@ pub async fn get_bookmarks(
             page: row.get("page"),
         })
         .collect();
+
+    info!("Bookmarks retrieved successfully");
 
     (StatusCode::OK, axum::Json(bookmarks)).into_response()
 }

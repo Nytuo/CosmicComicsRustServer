@@ -1,12 +1,13 @@
-use std::fs;
 use crate::routes_manager::AppState;
 use crate::services::profile_service::{CreateUserPayload, create_user_service, resolve_token};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use std::fs;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tracing::{error, info};
 
 pub async fn create_first_user(
     State(state): State<Arc<Mutex<AppState>>>,
@@ -19,11 +20,11 @@ pub async fn create_first_user(
     let payload_from_path = CreateUserPayload::new(name, passcode, None);
     match create_user_service(&payload_from_path, &base_path).await {
         Ok(_) => {
-            println!("User created successfully");
+            info!("User created successfully");
             StatusCode::OK
         }
         Err(e) => {
-            eprintln!("Error creating user: {}", e);
+            error!("Error creating user: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
@@ -52,7 +53,7 @@ pub async fn write_config(
     let file_path = format!("{}/profiles/{}/config.json", base_path, resolved_token);
 
     if let Err(e) = fs::write(&file_path, serde_json::to_string_pretty(&payload).unwrap()) {
-        eprintln!("Failed to write config file: {}", e);
+        error!("Failed to write config file: {}", e);
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 

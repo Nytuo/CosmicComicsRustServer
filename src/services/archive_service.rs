@@ -7,11 +7,12 @@ use std::{
     fs::{self, File},
     io::{self, Write},
     os::unix::fs::PermissionsExt,
-    path::{Path, PathBuf},
+    path::Path,
     sync::Arc,
     time::Duration,
 };
 use tokio::sync::Mutex;
+use tracing::{error, info};
 use unrar::Archive;
 use zip::ZipArchive;
 
@@ -33,27 +34,27 @@ pub async fn unzip_and_process(
 
     match ext {
         "zip" | "cbz" | "7z" | "cb7" | "tar" | "cbt" => {
-            println!("Processing zip-based archive: {}", zip_path);
+            info!("Processing zip-based archive: {}", zip_path);
             extract_all_images_from_zip(zip_path, extract_dir, token, progress_status).await?;
         }
 
         "rar" | "cbr" => {
-            println!("Processing rar-based archive: {}", zip_path);
+            info!("Processing rar-based archive: {}", zip_path);
             extract_all_images_from_rar(zip_path, extract_dir, token, progress_status).await?;
         }
 
         "pdf" => {
-            println!("Processing PDF: {}", zip_path);
+            info!("Processing PDF: {}", zip_path);
             convert_pdf_to_images(zip_path, extract_dir, token.clone(), progress_status).await?;
         }
 
         "epub" | "ebook" => {
-            println!("Processing EPUB: {}", zip_path);
+            info!("Processing EPUB: {}", zip_path);
             extract_pdf_from_epub(zip_path, extract_dir, token.clone(), progress_status).await?;
         }
 
         _ => {
-            println!("Unsupported extension: {}", ext);
+            error!("Unsupported extension: {}", ext);
             return Err(format!("Extension {} is not supported.", ext).into());
         }
     }
@@ -97,10 +98,10 @@ fn extract_first_image_from_zip<P: AsRef<Path>>(
         let out_path = extract_dir.as_ref().join(format!("{}.jpg", file_name));
         let mut out_file = File::create(out_path)?;
         io::copy(&mut img_file, &mut out_file)?;
-        println!("Image extracted from ZIP.");
+        info!("Image extracted from ZIP.");
         Ok(())
     } else {
-        println!("No image file found in ZIP.");
+        error!("No image file found in ZIP.");
         Ok(())
     }
 }
@@ -116,7 +117,7 @@ fn extract_first_image_from_rar<P: AsRef<Path>>(
         let filename = header.entry().filename.to_string_lossy().to_string();
 
         if header.entry().is_file() && is_image_file(&filename) {
-            println!("Found image: {}", filename);
+            info!("Found image: {}", filename);
             let extracted_file_path = extract_dir.as_ref().join(&*filename);
 
             archive = header.extract_to(&extracted_file_path)?;
@@ -125,10 +126,10 @@ fn extract_first_image_from_rar<P: AsRef<Path>>(
 
             if extracted_file_path.exists() {
                 fs::rename(&extracted_file_path, &renamed_path)?;
-                println!("Extracted and renamed to: {:?}", renamed_path);
+                info!("Extracted and renamed to: {:?}", renamed_path);
                 return Ok(());
             } else {
-                println!(
+                error!(
                     "Image file not found after extraction: {:?}",
                     extracted_file_path
                 );
@@ -138,7 +139,7 @@ fn extract_first_image_from_rar<P: AsRef<Path>>(
         }
     }
 
-    println!("No image found in the archive.");
+    info!("No image found in the archive.");
     Ok(())
 }
 
@@ -184,9 +185,9 @@ pub async fn extract_all_images_from_zip<P: AsRef<Path>>(
     );
 
     if image_count == 0 {
-        println!("No images found in ZIP archive.");
+        info!("No images found in ZIP archive.");
     } else {
-        println!("Extracted {} images from ZIP archive.", image_count);
+        info!("Extracted {} images from ZIP archive.", image_count);
     }
 
     Ok(())
@@ -246,9 +247,9 @@ pub(crate) async fn extract_all_images_from_rar<P: AsRef<Path>>(
     );
 
     if image_count == 0 {
-        println!("No images found in RAR archive.");
+        info!("No images found in RAR archive.");
     } else {
-        println!("Extracted {} images from RAR archive.", image_count);
+        info!("Extracted {} images from RAR archive.", image_count);
     }
 
     Ok(())
@@ -330,7 +331,7 @@ pub async fn extract_pdf_from_epub(
     );
     let output_pdf_path = format!("{}/output.pdf", extract_dir);
 
-    merge_pdfs(
+    if let Err(e) = merge_pdfs(
         (0..count)
             .map(|i| format!("{}/page_{}.pdf", extract_dir, i))
             .collect::<Vec<String>>()
@@ -338,7 +339,9 @@ pub async fn extract_pdf_from_epub(
             .map(|s| s.as_str())
             .collect::<Vec<&str>>(),
         &output_pdf_path,
-    );
+    ) {
+        error!("Failed to merge PDFs: {}", e);
+    }
 
     //clean up the individual PDF files
     let entries = fs::read_dir(extract_dir)?;
@@ -350,13 +353,17 @@ pub async fn extract_pdf_from_epub(
     }
 
     // Convert the merged PDF to images
-    convert_pdf_to_images(
+    if let Err(e) = convert_pdf_to_images(
         &output_pdf_path,
         extract_dir,
         token.clone(),
         progress_status,
     )
-    .await;
+    .await
+    {
+        error!("Failed to convert PDF to images: {}", e);
+    }
+
     fs::remove_file(output_pdf_path)?;
     Ok(())
 }
@@ -434,7 +441,7 @@ fn merge_pdfs(
     let save_path = Path::new(output_path);
     merged_doc.save_to_file(save_path)?;
 
-    println!("Merged PDF saved to: {}", output_path);
+    info!("Merged PDF saved to: {}", output_path);
     Ok(())
 }
 
@@ -473,11 +480,11 @@ pub async fn scrape_images_from_webpage(
             let bytes = response.bytes().await?;
             file.write_all(&bytes)?;
         } else {
-            println!("Failed to download image: {}", img_url);
+            error!("Failed to download image: {}", img_url);
         }
     }
 
-    println!("Scraped {} images from {}", images.len(), url);
+    info!("Scraped {} images from {}", images.len(), url);
     tab.close(true)?;
     Ok(())
 }

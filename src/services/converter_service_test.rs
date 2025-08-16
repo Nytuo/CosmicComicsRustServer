@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
-    use std::fs::{self, File};
-    use std::io::Write;
+    use sqlx::sqlite::SqlitePoolOptions;
     use std::path::Path;
     use tempfile::tempdir;
 

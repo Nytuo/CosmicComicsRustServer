@@ -4,6 +4,7 @@ use std::{fs, path::PathBuf};
 use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
+use tracing::error;
 
 use crate::repositories::database_repo;
 
@@ -41,7 +42,7 @@ pub fn generate_token(name: &str, cosmic_comics_temp: &str, user_dir: &str) -> S
     use rand::Rng;
     use rand::distr::Alphanumeric;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let token: String = (0..32).map(|_| rng.sample(Alphanumeric) as char).collect();
     let config_path = format!("{}/serverconfig.json", cosmic_comics_temp);
     let mut config: Value =
@@ -166,12 +167,12 @@ pub async fn delete_account_service(
     pool.close().await;
 
     if global.opened_db.remove(token).is_none() {
-        eprintln!("Failed to remove DB from openedDB");
+        error!("Failed to remove DB from openedDB");
     }
 
     let user_dir = format!("{}/profiles/{}", base_path, token);
     if fs::remove_dir_all(&user_dir).is_err() {
-        eprintln!("Failed to delete user directory: {}", user_dir);
+        error!("Failed to delete user directory: {}", user_dir);
         return Err("Failed to delete user directory".to_string());
     }
 
@@ -191,7 +192,7 @@ pub async fn modify_profile_service(
             new_pass.trim(),
         )
         .map_err(|e| {
-            eprintln!("Failed to write passcode: {}", e);
+            error!("Failed to write passcode: {}", e);
             "Failed to write passcode".to_string()
         })?;
     }
@@ -206,7 +207,7 @@ pub async fn modify_profile_service(
             new_pp_path,
             format!("{}/profiles/{}/pp.png", base_path, token),
         ) {
-            eprintln!("Failed to copy profile picture: {}", e);
+            error!("Failed to copy profile picture: {}", e);
             return Err("Failed to copy profile picture".to_string());
         }
     }
@@ -216,7 +217,7 @@ pub async fn modify_profile_service(
             format!("{}/profiles/{}", base_path, token),
             format!("{}/profiles/{}", base_path, new_user),
         ) {
-            eprintln!("Failed to rename user directory: {}", e);
+            error!("Failed to rename user directory: {}", e);
             return Err("Failed to rename user directory".to_string());
         }
     }
@@ -287,7 +288,6 @@ pub async fn discover_profiles_service(
                 && fs::read_to_string(&passcode_path)
                     .map(|s| !s.trim().is_empty() && s.trim() != "_nopasswordisusedforthisaccount_")
                     .unwrap_or(false);
-            let pp_path = format!("{}/profiles/{}/pp.png", base_path, name);
             let pp_server_url = format!("{}://{}/profile/getPPBN/{}", protocol, host, name);
             let profile = json!({
                 "name": name,

@@ -1,7 +1,8 @@
-use std::collections::HashMap;
 use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::HashMap;
+use tracing::{debug, error, info};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct OpenLibraryResponse {
@@ -57,7 +58,7 @@ pub async fn get_olapi_comics_by_id(id: &str) -> Result<OpenLibraryBook> {
         "https://openlibrary.org/api/books?bibkeys=OLID:{}&jscmd=details&format=json",
         id.replace("_3", "")
     );
-    println!("{}", url);
+    info!("{}", url);
 
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
@@ -68,14 +69,19 @@ pub async fn get_olapi_comics_by_id(id: &str) -> Result<OpenLibraryBook> {
     if book.books.is_empty() {
         return Err(anyhow!("No book found for ID: {}", id));
     }
-    let book_details = book.books.values().next().cloned().ok_or_else(|| anyhow!("No book details found"))?;
-    println!("{:?}", book_details);
+    let book_details = book
+        .books
+        .values()
+        .next()
+        .cloned()
+        .ok_or_else(|| anyhow!("No book details found"))?;
+    debug!("{:?}", book_details);
     Ok(book_details)
 }
 
 pub async fn get_olapi_search(name: &str) -> Result<OpenLibrarySearchResponse> {
     if name.is_empty() {
-        println!("OL API: name is empty");
+        error!("Name is empty");
         return Err(anyhow!("Name is empty"));
     }
 
@@ -83,7 +89,7 @@ pub async fn get_olapi_search(name: &str) -> Result<OpenLibrarySearchResponse> {
     sanitized_name = sanitized_name.replace(&['(', ')', '[', ']', '{', '}', '#'][..], "");
     sanitized_name = sanitized_name.trim_end().to_string();
 
-    println!("OL API: name: {}", sanitized_name);
+    info!("OL API: name: {}", sanitized_name);
 
     let url = format!(
         "http://openlibrary.org/search.json?q={}",
@@ -99,17 +105,17 @@ pub async fn get_olapi_search(name: &str) -> Result<OpenLibrarySearchResponse> {
     if data.docs.is_empty() {
         return Err(anyhow!("No results found for name: {}", name));
     }
-    println!("{:?}", data);
+    debug!("{:?}", data);
     Ok(data)
 }
 
 pub async fn get_olapi_book(key: &str) -> Result<Value> {
     if key.is_empty() {
-        println!("OL API: key is empty");
+        error!("key is empty");
         return Err(anyhow!("Key is empty"));
     }
 
-    println!("OL API: book: {}", key);
+    info!("book: {}", key);
 
     let url = format!(
         "https://openlibrary.org/api/books?bibkeys=OLID:{}&jscmd=details&format=json",
@@ -118,5 +124,6 @@ pub async fn get_olapi_book(key: &str) -> Result<Value> {
 
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
+    debug!("{:?}", data);
     Ok(data)
 }

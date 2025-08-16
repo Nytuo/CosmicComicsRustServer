@@ -1,8 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use axum::Json;
-    use dotenv::dotenv;
-    use serde_json::Value;
     use std::fs::{File, create_dir_all};
     use std::io::Write;
     use tempfile::tempdir;
@@ -50,12 +47,11 @@ mod tests {
                 .any(|v| v.as_str().unwrap().contains("subfolder"))
         );
     }
-    use sqlx::{Column, Row, SqlitePool, sqlite::SqlitePoolOptions};
-    use std::env;
+    use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 
     use crate::services::collectionner_service::{
         get_list_of_files_and_folders, get_list_of_folders, handle_anilist_series,
-        handle_google_book, handle_marvel_book, handle_marvel_series, handle_openlibrary_book,
+        handle_google_book, handle_openlibrary_book,
     };
 
     /* #[tokio::test]
@@ -123,7 +119,7 @@ mod tests {
 
         assert!(result.is_ok());
     } */
-    use sqlx::sqlite::{SqliteConnectOptions};
+    use sqlx::sqlite::SqliteConnectOptions;
 
     #[tokio::test]
     async fn test_handle_anilist_series_writes_to_db() {
@@ -160,7 +156,7 @@ mod tests {
     .await
     .unwrap();
 
-        let result = handle_anilist_series(&pool, "30042", 2, "dummy_token").await;
+        let result = handle_anilist_series(&pool, "30042", 2).await;
         assert!(result.is_ok());
 
         //check series existance
@@ -222,7 +218,7 @@ mod tests {
         let image: String = row.get("image");
         let description: String = row.get("description");
         let url: String = row.get("url");
-        let series_u:String = row.get("series");
+        let series_u: String = row.get("series");
         assert!(!name.is_empty());
         assert!(name.eq("Dragon Ball"));
         assert!(!image.is_empty());
@@ -303,7 +299,7 @@ mod tests {
     .await
     .unwrap();
 
-        let result = handle_google_book(&pool, "ltKXEAAAQBAJ", 2, "dummy_token").await;
+        let result = handle_google_book(&pool, "ltKXEAAAQBAJ", 2).await;
         assert!(result.is_ok());
 
         let row = sqlx::query("SELECT NOM, description FROM Books WHERE ID_book = ?")
@@ -390,7 +386,7 @@ mod tests {
     .await
     .unwrap();
 
-        let result = handle_openlibrary_book(&pool, "OL43511705M", 2, "dummy_token").await;
+        let result = handle_openlibrary_book(&pool, "OL43511705M", 2).await;
         assert!(result.is_ok());
 
         let row = sqlx::query("SELECT NOM, description FROM Books WHERE ID_book = ?")

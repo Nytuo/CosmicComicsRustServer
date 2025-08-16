@@ -1,11 +1,11 @@
 use std::{fs, path::Path, sync::Arc};
 
-use axum::http::{HeaderMap, Request};
+use axum::http::HeaderMap;
 use axum::{Json, extract::State, response::IntoResponse};
 use reqwest::StatusCode;
-use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::Mutex;
+use tracing::{error, info};
 
 use crate::{
     routes_manager::AppState,
@@ -22,11 +22,11 @@ pub async fn create_user(
 
     match create_user_service(&payload, &base_path).await {
         Ok(_) => {
-            println!("User created successfully");
+            info!("User created successfully");
             StatusCode::OK
         }
         Err(e) => {
-            eprintln!("Error creating user: {}", e);
+            error!("Error creating user: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
@@ -43,7 +43,7 @@ pub async fn get_profile_picture(
     let name_from_token = match resolve_token(&token, &base_path) {
         Some(name) => Some(name),
         None => {
-            eprintln!("Token not found in serverconfig.json");
+            error!("Token not found in serverconfig.json");
             None
         }
     };
@@ -150,11 +150,11 @@ pub async fn delete_account(
         .await
     {
         Ok(_) => {
-            println!("Account deleted successfully");
+            info!("Account deleted successfully");
             return (StatusCode::OK, "Account deleted successfully").into_response();
         }
         Err(e) => {
-            eprintln!("Error deleting account: {}", e);
+            error!("Error deleting account: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to delete account",
@@ -188,11 +188,11 @@ pub async fn modify_profile(
     .await
     {
         Ok(_) => {
-            println!("Profile modified successfully");
+            info!("Profile modified successfully");
             return (StatusCode::OK, "Profile modified successfully").into_response();
         }
         Err(e) => {
-            eprintln!("Error modifying profile: {}", e);
+            error!("Error modifying profile: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to modify profile",
@@ -210,15 +210,15 @@ pub async fn login(
     let config = state.config.lock().await;
     let base_path = config.base_path.clone();
 
-    println!("Attempting login for user: {}", name);
-    println!("With Passcode: {}", passcode);
+    info!("Attempting login for user: {}", name);
+    info!("With Passcode: {}", passcode);
     match crate::services::profile_service::login_service(&name, &passcode, &base_path).await {
         Ok(token) => {
-            println!("Login successful");
+            info!("Login successful");
             (StatusCode::OK, token).into_response()
         }
         Err(e) => {
-            eprintln!("Error logging in: {}", e);
+            error!("Error logging in: {}", e);
             (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response()
         }
     }
@@ -234,11 +234,11 @@ pub async fn login_check(
 
     match crate::services::profile_service::login_check_service(&token, &base_path).await {
         Ok(name) => {
-            println!("Token is valid");
+            info!("Token is valid");
             (StatusCode::OK, Json(name)).into_response()
         }
         Err(e) => {
-            eprintln!("Error checking token: {}", e);
+            error!("Error checking token: {}", e);
             (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
         }
     }
@@ -267,11 +267,11 @@ pub async fn discover_profiles(
         .await
     {
         Ok(profiles) => {
-            println!("Profiles discovered successfully");
+            info!("Profiles discovered successfully");
             (StatusCode::OK, Json(profiles)).into_response()
         }
         Err(e) => {
-            eprintln!("Error discovering profiles: {}", e);
+            error!("Error discovering profiles: {}", e);
             (StatusCode::OK, Json("[]")).into_response()
         }
     }
@@ -318,7 +318,7 @@ pub async fn download_database(
 
                 // If a custom content-length header is present, log a warning (not set in response)
                 if headers_for_response_download.contains_key("custom-content-length") {
-                    eprintln!(
+                    error!(
                         "Warning: custom-content-length header present, ignoring in favor of standard Content-Length."
                     );
                     headers_for_response_download.remove("custom-content-length");
@@ -354,11 +354,11 @@ pub async fn logout(
 
     match crate::services::profile_service::logout_service(&token, &base_path).await {
         Ok(_) => {
-            println!("Logout successful");
+            info!("Logout successful");
             (StatusCode::OK, "Logout successful").into_response()
         }
         Err(e) => {
-            eprintln!("Error logging out: {}", e);
+            error!("Error logging out: {}", e);
             (StatusCode::UNAUTHORIZED, "Invalid token").into_response()
         }
     }

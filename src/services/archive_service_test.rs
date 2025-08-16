@@ -1,8 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use headless_chrome::Browser;
-    use serde_json::json;
-    use std::collections::HashMap;
+
     use std::fs::{self, File};
     use std::io::Write;
     use std::path::Path;
@@ -13,7 +11,6 @@ mod tests {
 
     use crate::AppGlobalVariables;
     use crate::services::archive_service::*;
-    use pdfium_render::prelude::*;
 
     fn create_test_cbz(path: &Path) {
         let file = File::create(path).unwrap();
@@ -187,7 +184,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_extract_all_images_from_zip(){
+    async fn test_extract_all_images_from_zip() {
         let temp = tempdir().unwrap();
         let zip_path = temp.path().join("sample.zip");
         let extract_dir = temp.path().join("extracted_images");
@@ -215,17 +212,20 @@ mod tests {
 
         assert!(result.is_ok());
         let extracted_files: Vec<_> = fs::read_dir(&extract_dir).unwrap().collect();
-        assert!(!extracted_files.is_empty(), "No images were extracted from the ZIP archive.");
+        assert!(
+            !extracted_files.is_empty(),
+            "No images were extracted from the ZIP archive."
+        );
     }
 
     #[tokio::test]
     async fn test_unzip_and_process_creates_path_file_zip() {
-        use tempfile::tempdir;
-        use std::fs;
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
         use crate::AppGlobalVariables;
         use crate::services::archive_service::unzip_and_process;
+        use std::fs;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+        use tokio::sync::Mutex;
 
         let temp = tempdir().unwrap();
         let extract_dir = temp.path().join("out");
@@ -257,12 +257,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_unzip_and_process_creates_path_file_rar() {
-        use tempfile::tempdir;
-        use std::fs::{self, File};
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
         use crate::AppGlobalVariables;
         use crate::services::archive_service::unzip_and_process;
+        use std::fs::{self};
+        use std::sync::Arc;
+        use tempfile::tempdir;
+        use tokio::sync::Mutex;
 
         let temp = tempdir().unwrap();
         let extract_dir = temp.path().join("out");
@@ -286,13 +286,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_unzip_and_process_creates_path_file_epub() {
-        use tempfile::tempdir;
-        use std::fs::{self, File};
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
-        use zip::write::FileOptions;
         use crate::AppGlobalVariables;
         use crate::services::archive_service::unzip_and_process;
+        use std::fs::File;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+        use tokio::sync::Mutex;
+        use zip::write::FileOptions;
 
         let temp = tempdir().unwrap();
         let extract_dir = temp.path().join("out");
@@ -325,12 +325,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_unzip_and_process_pdf() {
-        use tempfile::tempdir;
-        use std::fs;
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
         use crate::AppGlobalVariables;
         use crate::services::archive_service::unzip_and_process;
+        use std::fs;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+        use tokio::sync::Mutex;
 
         let temp = tempdir().unwrap();
         let extract_dir = temp.path().join("out");
@@ -358,12 +358,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_unzip_and_process_unknown_extension() {
-        use tempfile::tempdir;
-        use std::fs::File;
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
         use crate::AppGlobalVariables;
         use crate::services::archive_service::unzip_and_process;
+        use std::fs::File;
+        use std::sync::Arc;
+        use tempfile::tempdir;
+        use tokio::sync::Mutex;
 
         let temp = tempdir().unwrap();
         let extract_dir = temp.path().join("out");

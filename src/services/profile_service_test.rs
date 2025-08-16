@@ -1,7 +1,5 @@
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use crate::{
         AppGlobalVariables,
         services::profile_service::{

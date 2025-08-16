@@ -1,9 +1,10 @@
-use sqlx::sqlite::{SqlitePool, SqliteValueRef, SqliteConnectOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use sqlx::{Column, Executor, Row, TypeInfo, ValueRef, query};
 use std::collections::HashMap;
 use std::fs;
 use std::iter::repeat;
 use std::path::Path;
+use tracing::{debug, error, info};
 
 use crate::utils::strip_outer_quotes;
 
@@ -208,7 +209,7 @@ pub async fn get_db(
     Ok(pool)
 }
 
-use sqlx::{Sqlite, QueryBuilder};
+use sqlx::{QueryBuilder, Sqlite};
 
 pub async fn update_db(
     db_pool: &SqlitePool,
@@ -220,7 +221,7 @@ pub async fn update_db(
     condition_value: &str,
 ) -> Result<(), sqlx::Error> {
     if update_type == "edit" && columns.len() != values.len() {
-        eprintln!(
+        error!(
             "Error: columns and values length mismatch (columns: {}, values: {})",
             columns.len(),
             values.len()
@@ -239,11 +240,16 @@ pub async fn update_db(
         qb.push(table).push(" SET ");
 
         for (i, (col, val)) in columns.iter().zip(values.iter()).enumerate() {
-            if i > 0 { qb.push(", "); }
+            if i > 0 {
+                qb.push(", ");
+            }
             qb.push(col).push(" = ").push_bind(val);
         }
 
-        qb.push(" WHERE ").push(condition_column).push(" = ").push_bind(condition_value);
+        qb.push(" WHERE ")
+            .push(condition_column)
+            .push(" = ")
+            .push_bind(condition_value);
         qb.build().execute(db_pool).await
     } else {
         let mut qb = QueryBuilder::<Sqlite>::new("UPDATE ");
@@ -253,19 +259,22 @@ pub async fn update_db(
             .push(" = ")
             .push_bind(&values[0]);
 
-        qb.push(" WHERE ").push(condition_column).push(" = ").push_bind(condition_value);
+        qb.push(" WHERE ")
+            .push(condition_column)
+            .push(" = ")
+            .push_bind(condition_value);
         qb.build().execute(db_pool).await
     };
 
     match result {
         Ok(_) => {
             if update_type != "edit" {
-                println!("Updated {} in {} table", condition_value, table);
+                info!("Updated {} in {} table", condition_value, table);
             }
             Ok(())
         }
         Err(e) => {
-            eprintln!(
+            error!(
                 "Database update failed for table '{}', condition '{} = {}': {:?}",
                 table, condition_column, condition_value, e
             );
@@ -273,8 +282,6 @@ pub async fn update_db(
         }
     }
 }
-
-
 
 pub async fn insert_into_db(
     db_pool: &SqlitePool,
@@ -295,14 +302,14 @@ pub async fn insert_into_db(
         "INSERT OR IGNORE INTO {} {} VALUES ({});",
         table, column_names, placeholders
     );
-    println!("Executing query: {}", insert_query);
+    info!("Executing query: {}", insert_query);
     let mut query_builder = query(&insert_query);
     let values_without_quotes = values
         .iter()
         .map(|value| strip_outer_quotes(value))
         .collect::<Vec<_>>();
     for value in values_without_quotes {
-        println!("{}", value);
+        debug!("{}", value);
         query_builder = query_builder.bind(value);
     }
     query_builder.execute(db_pool).await?;
@@ -336,7 +343,7 @@ pub async fn select_from_db(
             conditions.join(&format!(" {} ", separator))
         ));
     }
-    println!("Executing query: {}", query_str);
+    info!("Executing query: {}", query_str);
     let rows = query(&query_str).fetch_all(db_pool).await?;
     let mut results = Vec::new();
     for row in rows {
@@ -367,8 +374,8 @@ pub async fn select_from_db_with_options(
     db_pool: &SqlitePool,
     option: &str,
 ) -> Result<Vec<HashMap<String, String>>, sqlx::Error> {
-    let mut query_str = format!("SELECT {};", option);
-    println!("Executing query: {}", query_str);
+    let query_str = format!("SELECT {};", option);
+    info!("Executing query: {}", query_str);
     let rows = query(&query_str).fetch_all(db_pool).await?;
     let mut results = Vec::new();
     for row in rows {
@@ -412,7 +419,7 @@ pub async fn delete_from_db(
         condition_value,
         option.unwrap_or("")
     );
-    println!("Executing query: {}", delete_query);
+    info!("Executing query: {}", delete_query);
     query(&delete_query).execute(db_pool).await?;
     Ok(())
 }

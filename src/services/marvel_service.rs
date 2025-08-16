@@ -3,6 +3,7 @@ use chrono::Utc;
 use md5;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tracing::{debug, error, info};
 use urlencoding::encode;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -21,7 +22,8 @@ pub struct Image {
 pub struct ResourceList<T> {
     pub available: u32,
     pub returned: u32,
-    pub collectionURI: String,
+    #[serde(rename = "collectionURI")]
+    pub collection_uri: String,
     pub items: Vec<T>,
 }
 
@@ -46,19 +48,22 @@ pub struct ComicPrice {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ComicSummary {
-    pub resourceURI: String,
+    #[serde(rename = "resourceURI")]
+    pub resource_uri: String,
     pub name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SeriesSummary {
-    pub resourceURI: String,
+    #[serde(rename = "resourceURI")]
+    pub resource_uri: String,
     pub name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EventSummary {
-    pub resourceURI: String,
+    #[serde(rename = "resourceURI")]
+    pub resource_uri: String,
     pub name: String,
 }
 
@@ -68,7 +73,8 @@ pub struct Character {
     pub name: String,
     pub description: String,
     pub modified: String,
-    pub resourceURI: String,
+    #[serde(rename = "resourceURI")]
+    pub resource_uri: String,
     pub urls: Vec<Url>,
     pub thumbnail: Image,
     pub comics: ResourceList<ComicSummary>,
@@ -80,26 +86,34 @@ pub struct Character {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Comic {
     pub id: u32,
-    pub digitalId: u32,
+    #[serde(rename = "digitalId")]
+    pub digital_id: u32,
     pub title: String,
-    pub issueNumber: f32,
-    pub variantDescription: String,
+    #[serde(rename = "issueNumber")]
+    pub issue_number: f32,
+    #[serde(rename = "variantDescription")]
+    pub variant_description: String,
     pub description: Option<String>,
     pub modified: String,
     pub isbn: String,
     pub upc: String,
-    pub diamondCode: String,
+    #[serde(rename = "diamondCode")]
+    pub diamond_code: String,
     pub ean: String,
     pub issn: String,
     pub format: String,
-    pub pageCount: u32,
-    pub textObjects: Vec<TextObject>,
-    pub resourceURI: String,
+    #[serde(rename = "pageCount")]
+    pub page_count: u32,
+    #[serde(rename = "textObjects")]
+    pub text_objects: Vec<TextObject>,
+    #[serde(rename = "resourceURI")]
+    pub resource_uri: String,
     pub urls: Vec<Url>,
     pub series: SeriesSummary,
     pub variants: Vec<ComicSummary>,
     pub collections: Vec<ComicSummary>,
-    pub collectedIssues: Vec<ComicSummary>,
+    #[serde(rename = "collectedIssues")]
+    pub collected_issues: Vec<ComicSummary>,
     pub dates: Vec<ComicDate>,
     pub prices: Vec<ComicPrice>,
     pub thumbnail: Image,
@@ -113,13 +127,18 @@ pub struct Comic {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Creator {
     pub id: u32,
-    pub firstName: Option<String>,
-    pub middleName: Option<String>,
-    pub lastName: Option<String>,
+    #[serde(rename = "firstName")]
+    pub first_name: Option<String>,
+    #[serde(rename = "middleName")]
+    pub middle_name: Option<String>,
+    #[serde(rename = "lastName")]
+    pub last_name: Option<String>,
     pub suffix: Option<String>,
-    pub fullName: String,
+    #[serde(rename = "fullName")]
+    pub full_name: String,
     pub modified: String,
-    pub resourceURI: String,
+    #[serde(rename = "resourceURI")]
+    pub resource_uri: String,
     pub urls: Vec<Url>,
     pub thumbnail: Option<Image>,
     pub series: ResourceList<SeriesSummary>,
@@ -133,7 +152,8 @@ pub struct Event {
     pub id: u32,
     pub title: String,
     pub description: Option<String>,
-    pub resourceURI: String,
+    #[serde(rename = "resourceURI")]
+    pub resource_uri: String,
     pub urls: Vec<Url>,
     pub modified: String,
     pub start: Option<String>,
@@ -153,10 +173,13 @@ pub struct Series {
     pub id: u32,
     pub title: String,
     pub description: Option<String>,
-    pub resourceURI: String,
+    #[serde(rename = "resourceURI")]
+    pub resource_uri: String,
     pub urls: Vec<Url>,
-    pub startYear: u32,
-    pub endYear: u32,
+    #[serde(rename = "startYear")]
+    pub start_year: u32,
+    #[serde(rename = "endYear")]
+    pub end_year: u32,
     pub rating: Option<String>,
     pub modified: String,
     pub thumbnail: Option<Image>,
@@ -234,7 +257,7 @@ pub async fn api_marvel_get(
     marvel_public_key: &str,
 ) -> Result<serde_json::Value> {
     if name.is_empty() {
-        println!("no name provided, aborting GETMARVELAPI");
+        error!("no name provided, aborting GETMARVELAPI");
         return Err(anyhow!("Name is empty"));
     }
 
@@ -282,17 +305,17 @@ pub async fn get_marvel_api_comics(
     marvel_public_key: &str,
 ) -> Result<Value> {
     if name.is_empty() {
-        println!("GETMARVELAPI_Comics: name is empty");
+        error!("Name is empty");
         return Err(anyhow!("Name is empty"));
     }
     if series_start_date.is_empty() {
-        println!("GETMARVELAPI_Comics: seriesStartDate is empty");
+        error!("Series start date is empty");
         return Err(anyhow!("Series start date is empty"));
     }
 
     let mut issue_number = String::new();
     let inb_from_name = name.replace(|c: char| !c.is_numeric() && c != '#', "&");
-    println!("inbFromName: {}", inb_from_name);
+    info!("inbFromName: {}", inb_from_name);
 
     for element in inb_from_name.split('&') {
         if element.starts_with('#') && element[1..].chars().all(|c| c.is_numeric()) {
@@ -305,12 +328,9 @@ pub async fn get_marvel_api_comics(
         .trim_end()
         .to_string();
 
-    println!("GETMARVELAPI_Comics: name: {}", cleaned_name);
-    println!("GETMARVELAPI_Comics: issueNumber: {}", issue_number);
-    println!(
-        "GETMARVELAPI_Comics: seriesStartDate: {}",
-        series_start_date
-    );
+    info!("Name: {}", cleaned_name);
+    info!("Issue Number: {}", issue_number);
+    info!("Series Start Date: {}", series_start_date);
 
     let encoded_name = encode(&cleaned_name);
     let base_url = "https://gateway.marvel.com:443/v1/public/comics";
@@ -334,29 +354,29 @@ pub async fn get_marvel_api_comics(
 
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    println!("{:#?}", data);
+    debug!("{:#?}", data);
     Ok(data)
 }
-pub async fn get_marvel_api_variants(
-    id: &str,
-    marvel_private_key: &str,
-    marvel_public_key: &str,
-) -> Result<Value> {
-    let url = recover_marvel_api_link(
-        "series",
-        id,
-        "comics",
-        Some(true),
-        "issueNumber",
-        None,
-        marvel_private_key,
-        marvel_public_key,
-    );
-    let response = reqwest::get(&url).await?;
-    let data = response.json::<Value>().await?;
-    println!("{:#?}", data);
-    Ok(data)
-}
+// pub async fn get_marvel_api_variants(
+//     id: &str,
+//     marvel_private_key: &str,
+//     marvel_public_key: &str,
+// ) -> Result<Value> {
+//     let url = recover_marvel_api_link(
+//         "series",
+//         id,
+//         "comics",
+//         Some(true),
+//         "issueNumber",
+//         None,
+//         marvel_private_key,
+//         marvel_public_key,
+//     );
+//     let response = reqwest::get(&url).await?;
+//     let data = response.json::<Value>().await?;
+//     debug!("{:#?}", data);
+//     Ok(data)
+// }
 pub async fn get_marvel_api_relations(
     id: &str,
     marvel_private_key: &str,
@@ -374,7 +394,7 @@ pub async fn get_marvel_api_relations(
     );
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    println!("{:#?}", data);
+    debug!("{:#?}", data);
     Ok(data)
 }
 pub async fn get_marvel_api_characters(
@@ -395,7 +415,7 @@ pub async fn get_marvel_api_characters(
     );
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    println!("{:#?}", data);
+    debug!("{:#?}", data);
     Ok(data)
 }
 pub async fn get_marvel_api_creators(
@@ -416,7 +436,7 @@ pub async fn get_marvel_api_creators(
     );
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    println!("{:#?}", data);
+    debug!("{:#?}", data);
     Ok(data)
 }
 pub async fn get_marvel_api_comics_by_id(
@@ -441,7 +461,7 @@ pub async fn get_marvel_api_comics_by_id(
         .and_then(|arr| arr.first())
     {
         let comic: Comic = serde_json::from_value(comic.clone())?;
-        println!("{:#?}", comic);
+        debug!("{:#?}", comic);
         return Ok(comic);
     }
     Err(anyhow!("Comic not found or invalid response format"))
@@ -459,7 +479,7 @@ pub async fn get_marvel_api_series_by_id(
         generate_marvel_api_auth(marvel_private_key, marvel_public_key)
     );
 
-    println!("Generated URL: {}", url);
+    info!("Generated URL: {}", url);
 
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
@@ -468,7 +488,7 @@ pub async fn get_marvel_api_series_by_id(
         .and_then(|arr| arr.first())
     {
         let series: Series = serde_json::from_value(series.clone())?;
-        println!("{:#?}", series);
+        debug!("{:#?}", series);
         return Ok(series);
     }
     Err(anyhow!("Series not found or invalid response format"))
@@ -480,7 +500,7 @@ pub async fn get_marvel_api_search(
     marvel_public_key: &str,
 ) -> Result<Value> {
     if name.is_empty() {
-        println!("no name provided, aborting GETMARVELAPI");
+        error!("no name provided, aborting GETMARVELAPI");
         return Err(anyhow!("Name is empty"));
     }
 
@@ -507,6 +527,6 @@ pub async fn get_marvel_api_search(
 
     let response = reqwest::get(&url).await?;
     let data = response.json::<Value>().await?;
-    println!("{:#?}", data);
+    debug!("{:#?}", data);
     Ok(data)
 }

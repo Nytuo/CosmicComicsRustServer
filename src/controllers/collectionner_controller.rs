@@ -14,14 +14,13 @@ use axum::Json;
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::IntoResponse;
-use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 use sqlx::Row;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info};
 
 #[derive(Deserialize)]
 pub struct FillBlankImagePayload {
@@ -33,28 +32,6 @@ pub struct InsertAnilistBookPayload {
     token: String,
     path: String,
     realname: String,
-}
-
-#[derive(Deserialize)]
-pub struct InsertMarvelBookPayload {
-    token: String,
-    realname: String,
-    date: String,
-    path: String,
-}
-
-#[derive(serde::Deserialize)]
-pub struct InsertGoogleBooksPayload {
-    token: String,
-    name: String,
-    path: String,
-}
-
-#[derive(serde::Deserialize)]
-pub struct InsertOLBookPayload {
-    token: String,
-    name: String,
-    path: String,
 }
 
 pub async fn fill_blank_images_controller(
@@ -399,10 +376,6 @@ pub async fn insert_marvel_book(
             error!("Error fetching Marvel API data: {}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
-        _ => {
-            error!("Unexpected error occurred");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
     }
 }
 
@@ -526,10 +499,6 @@ pub async fn insert_googlebooks_book(
             error!("Error fetching Google Books API data: {}", err);
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
-        _ => {
-            error!("Unexpected error occurred");
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
     }
 }
 
@@ -646,10 +615,6 @@ pub async fn insert_olib_book(
                         error!("Error fetching book details: {}", err);
                         StatusCode::INTERNAL_SERVER_ERROR.into_response()
                     }
-                    _ => {
-                        error!("Unexpected error occurred while fetching book details");
-                        StatusCode::INTERNAL_SERVER_ERROR.into_response()
-                    }
                 }
             } else {
                 let random_id = format!("{}_3", rand::random::<u32>());
@@ -668,10 +633,6 @@ pub async fn insert_olib_book(
         }
         Err(err) => {
             error!("Error fetching Open Library API data: {}", err);
-            StatusCode::INTERNAL_SERVER_ERROR.into_response()
-        }
-        _ => {
-            error!("Unexpected error occurred");
             StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
@@ -708,7 +669,10 @@ pub async fn refresh_meta_controller(
     let mut sanitized_id = payload.id.trim().to_string();
     sanitized_id = sanitized_id.replace("'", "");
 
-    info!("Refresh Metadata for {} {} for provider {}",sanitized_id, payload.item_type, payload.provider);
+    info!(
+        "Refresh Metadata for {} {} for provider {}",
+        sanitized_id, payload.item_type, payload.provider
+    );
 
     match payload.provider {
         1 => {
@@ -719,7 +683,6 @@ pub async fn refresh_meta_controller(
                     &pool,
                     &sanitized_id,
                     payload.provider,
-                    &payload.token,
                     marvel_priv_api_key.clone(),
                     marvel_pub_api_key.clone(),
                 )
@@ -732,7 +695,6 @@ pub async fn refresh_meta_controller(
                     &pool,
                     &sanitized_id,
                     payload.provider,
-                    &payload.token,
                     marvel_priv_api_key.clone(),
                     marvel_pub_api_key.clone(),
                 )
@@ -744,25 +706,19 @@ pub async fn refresh_meta_controller(
         }
         2 => {
             if payload.item_type != "book" {
-                if let Err(e) =
-                    handle_anilist_series(&pool, &sanitized_id, payload.provider, &payload.token)
-                        .await
+                if let Err(e) = handle_anilist_series(&pool, &sanitized_id, payload.provider).await
                 {
                     error!("Error handling Anilist series: {}", e);
                 }
             }
         }
         3 => {
-            if let Err(e) =
-                handle_openlibrary_book(&pool, &sanitized_id, payload.provider, &payload.token).await
-            {
+            if let Err(e) = handle_openlibrary_book(&pool, &sanitized_id, payload.provider).await {
                 error!("Error handling OpenLibrary book: {}", e);
             }
         }
         4 => {
-            if let Err(e) =
-                handle_google_book(&pool, &sanitized_id, payload.provider, &payload.token).await
-            {
+            if let Err(e) = handle_google_book(&pool, &sanitized_id, payload.provider).await {
                 error!("Error handling Google Book: {}", e);
             }
         }
@@ -773,7 +729,7 @@ pub async fn refresh_meta_controller(
 }
 
 pub async fn get_list_of_files_and_folders_controller(
-    State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
+    State(_): State<Arc<tokio::sync::Mutex<AppState>>>,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     let dir = crate::utils::replace_html_address_path(&path);
@@ -792,7 +748,7 @@ pub async fn get_list_of_files_and_folders_controller(
 }
 
 pub async fn get_list_of_folders_controller(
-    State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
+    State(_): State<Arc<tokio::sync::Mutex<AppState>>>,
     axum::extract::Path(path): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     let dir = crate::utils::replace_html_address_path(&path);

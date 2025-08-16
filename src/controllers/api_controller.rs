@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use serde::Deserialize;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info};
 
 pub async fn marvel_search_only(
     State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
@@ -92,7 +92,7 @@ pub async fn marvel_get_comics(
 }
 
 pub async fn openlibrary_search(
-    State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
+    State(_): State<Arc<tokio::sync::Mutex<AppState>>>,
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     let name = name.clone();
@@ -145,7 +145,7 @@ pub async fn googlebooks_search(
 }
 
 #[derive(Deserialize)]
-pub struct apiSeriesAdd {
+pub struct ApiSeriesAdd {
     name: String,
     token: String,
     path: String,
@@ -153,7 +153,7 @@ pub struct apiSeriesAdd {
 
 pub async fn marvel_add(
     State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
-    Json(marvel): Json<apiSeriesAdd>,
+    Json(marvel): Json<ApiSeriesAdd>,
 ) -> impl IntoResponse {
     let state = state.lock().await;
     let api_tokens = state.creds.clone();
@@ -195,14 +195,14 @@ pub async fn marvel_add(
     match api_marvel_get(&*name, &*marvel_private_key, &*marvel_public_key).await {
         Ok(data) => {
             let columns = "ID_Series,title,note,start_date,end_date,description,Score,cover,BG,CHARACTERS,STAFF,SOURCE,volumes,chapters,favorite,PATH,lock";
-            if (data
+            if data
                 .get("data")
                 .unwrap()
                 .get("total")
                 .unwrap()
                 .as_str()
                 .unwrap()
-                == "0")
+                == "0"
             {
                 let rand_id = crate::utils::generate_random_id();
                 let values_vec = vec![
@@ -476,7 +476,7 @@ pub async fn marvel_add(
 
 pub async fn anilist_add(
     State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
-    Json(anilist): Json<apiSeriesAdd>,
+    Json(anilist): Json<ApiSeriesAdd>,
 ) -> impl IntoResponse {
     let state = state.lock().await;
     let base_path = state.config.lock().await.base_path.clone();
@@ -524,7 +524,7 @@ pub async fn anilist_add(
     match api_anilist_get(name.as_str()).await {
         Ok(data) => {
             let columns = "ID_Series,title,note,statut,start_date,end_date,description,Score,genres,cover,BG,CHARACTERS,TRENDING,STAFF,SOURCE,volumes,chapters,favorite,PATH,lock";
-            if (data.is_none()) {
+            if data.is_none() {
                 let rand_id = crate::utils::generate_random_id();
                 let values_vec = vec![
                     (rand_id.to_string() + "U_2"),
@@ -746,7 +746,7 @@ pub async fn anilist_add(
 }
 
 pub async fn anilist_search(
-    State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
+    State(_): State<Arc<tokio::sync::Mutex<AppState>>>,
     axum::extract::Path(name): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     let name = name.clone();

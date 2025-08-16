@@ -37,13 +37,7 @@ pub async fn convert_all_images_in_directory(
                     let col_vec = vec!["URLCover".to_string()];
                     let val_vec = vec![output_path.to_str().unwrap().to_string()];
                     update_db(
-                        &db_pool,
-                        "noedit",
-                        col_vec,
-                        val_vec,
-                        "Books",
-                        "ID_book",
-                        file_name,
+                        &db_pool, "noedit", col_vec, val_vec, "Books", "ID_book", file_name,
                     )
                     .await?;
                 }

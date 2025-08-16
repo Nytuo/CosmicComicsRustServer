@@ -11,7 +11,7 @@ use tokio::signal;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use tower::ServiceBuilder;
 use tower_http::cors::{Any, CorsLayer};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{error, info};
 use tracing_subscriber::fmt::time::ChronoLocal;
 use tracing_subscriber::{self};
 
@@ -114,7 +114,7 @@ fn get_data_path() -> PathBuf {
 }
 
 fn setup_cosmic_comics_temp(base_path: &str) {
-    let cosmic_comics_temp = PathBuf::from(base_path.clone());
+    let cosmic_comics_temp = PathBuf::from(base_path);
 
     fs::create_dir_all(&cosmic_comics_temp).unwrap_or_else(|err| {
         error!("Failed to create directory: {:?}", err);
@@ -135,7 +135,7 @@ fn setup_cosmic_comics_temp(base_path: &str) {
 }
 
 fn setup_server_config(cosmic_comics_temp: &str, dev_mode: bool) {
-    let server_config_path = PathBuf::from(cosmic_comics_temp.clone()).join("serverconfig.json");
+    let server_config_path = PathBuf::from(cosmic_comics_temp).join("serverconfig.json");
 
     if !server_config_path.exists() {
         let default_config = json!({

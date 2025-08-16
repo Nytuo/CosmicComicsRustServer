@@ -1,19 +1,18 @@
 use crate::routes_manager::AppState;
-use anyhow::Context;
 use axum::body::Body;
-use axum::{Router, extract::State, http::StatusCode, response::IntoResponse, routing::post};
+use axum::{extract::State, http::StatusCode, response::IntoResponse};
 use futures_util::TryStreamExt;
-use multer::Multipart;
 use std::path::PathBuf;
-use std::{convert::Infallible, fs, sync::Arc};
+use std::{fs, sync::Arc};
 use tokio::{fs::File, io::AsyncWriteExt};
 use tokio_util::io::ReaderStream;
-use tower_http::limit::RequestBodyLimitLayer;
-use tracing::{info, warn};
+use tracing::{error, info};
 
 use crate::services::archive_service::unzip_and_process;
 use crate::services::profile_service::resolve_token;
-use crate::utils::{VALID_IMAGE_EXTENSION, get_list_of_images, replace_html_address_path};
+use crate::utils::{
+    VALID_BOOK_EXTENSION, VALID_IMAGE_EXTENSION, get_list_of_images, replace_html_address_path,
+};
 use axum::extract::{Multipart as AxumMultipart, Path};
 use axum::http::{HeaderMap, Response};
 use axum_macros::debug_handler;
@@ -42,7 +41,7 @@ pub async fn upload_comic_controller(
         }
 
         if upload_path.exists() {
-            eprintln!("File {} already exists, skipping upload.", file_name);
+            error!("File {} already exists, skipping upload.", file_name);
             continue;
         }
 
@@ -91,6 +90,15 @@ pub async fn unzip_controller(
         .and_then(|e| e.to_str())
         .unwrap_or_default();
 
+    if !VALID_BOOK_EXTENSION.contains(&ext) {
+        error!("This extensions is not (yet) supported");
+        return (
+            StatusCode::NOT_ACCEPTABLE,
+            "This extensions is not (yet) supported",
+        )
+            .into_response();
+    }
+
     let unzip_result = unzip_and_process(
         &current_path,
         &output_dir,
@@ -109,7 +117,7 @@ pub async fn unzip_controller(
             (StatusCode::OK, response).into_response()
         }
         Err(e) => {
-            eprintln!("Error unzipping file: {}", e);
+            error!("Error unzipping file: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to unzip file: {}", e),
@@ -143,7 +151,7 @@ pub async fn view_current_controller(
     let response = match serde_json::to_string(&list_of_images) {
         Ok(json) => json,
         Err(e) => {
-            eprintln!("Error serializing JSON: {}", e);
+            error!("Error serializing JSON: {}", e);
             return (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to serialize JSON",
@@ -154,13 +162,10 @@ pub async fn view_current_controller(
     (StatusCode::OK, response).into_response()
 }
 
-pub async fn isDir(
+pub async fn viewer_is_dir(
     axum::extract::Path(path): axum::extract::Path<String>,
-    axum::extract::State(state): axum::extract::State<Arc<tokio::sync::Mutex<AppState>>>,
+    axum::extract::State(_): axum::extract::State<Arc<tokio::sync::Mutex<AppState>>>,
 ) -> impl IntoResponse {
-    let state = state.lock().await;
-    let config = state.config.lock().await;
-
     let full_path = format!("{}", path);
     let is_dir = tokio::fs::metadata(&full_path)
         .await
@@ -188,7 +193,7 @@ pub async fn get_config_controller(
     match tokio::fs::read_to_string(&profile).await {
         Ok(content) => (StatusCode::OK, content).into_response(),
         Err(e) => {
-            eprintln!("Error reading config file: {}", e);
+            error!("Error reading config file: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to read config file: {}", e),
@@ -221,7 +226,7 @@ pub async fn read_image(
             let token = headers.get("token").and_then(|v| v.to_str().ok());
             let token_unwrapped = token.unwrap_or("");
             match (token, page) {
-                (Some(tok), Some(pg)) => {
+                (Some(_), Some(pg)) => {
                     let resolved_token = match resolve_token(&token_unwrapped, &config.base_path) {
                         Some(t) => t,
                         None => return (StatusCode::UNAUTHORIZED, "Invalid token").into_response(),
@@ -262,7 +267,7 @@ pub async fn read_image(
 
 pub async fn viewer_view_controller(
     headers: HeaderMap,
-    State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
+    State(_): State<Arc<tokio::sync::Mutex<AppState>>>,
 ) -> impl IntoResponse {
     let path = headers.get("path").and_then(|v| v.to_str().ok());
     if let Some(path) = path {
@@ -274,7 +279,7 @@ pub async fn viewer_view_controller(
         return match serde_json::to_string(&tosend) {
             Ok(json) => (StatusCode::OK, json).into_response(),
             Err(e) => {
-                eprintln!("Error serializing JSON: {}", e);
+                error!("Error serializing JSON: {}", e);
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Failed to serialize JSON",
@@ -315,26 +320,20 @@ pub async fn view_current_page_controller(
 
 pub async fn view_exist_controller(
     Path(path): Path<String>,
-    State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
+    State(_): State<Arc<tokio::sync::Mutex<AppState>>>,
 ) -> impl IntoResponse {
-    let state = state.lock().await;
-    let config = state.config.lock().await;
-
     let full_path = replace_html_address_path(&path);
 
     let exists = tokio::fs::metadata(&full_path).await.is_ok();
-    println!("{}", exists);
+    info!("File exists: {}", exists);
 
     (StatusCode::OK, exists.to_string()).into_response()
 }
 
 pub async fn view_read_file_controller(
     Path(path): Path<String>,
-    State(state): State<Arc<tokio::sync::Mutex<AppState>>>,
+    State(_): State<Arc<tokio::sync::Mutex<AppState>>>,
 ) -> impl IntoResponse {
-    let state = state.lock().await;
-    let config = state.config.lock().await;
-
     let sanitized_path = replace_html_address_path(&path);
     let full_path = format!("{}", sanitized_path);
 
@@ -348,7 +347,7 @@ pub async fn view_read_file_controller(
                 .into_response()
         }
         Err(e) => {
-            eprintln!("Error reading file: {}", e);
+            error!("Error reading file: {}", e);
             (StatusCode::INTERNAL_SERVER_ERROR, "Failed to read file").into_response()
         }
     }

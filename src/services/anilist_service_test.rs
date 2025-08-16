@@ -3,9 +3,6 @@ mod tests {
     use crate::services::anilist_service::{
         api_anilist_get, api_anilist_get_by_id, api_anilist_get_search,
     };
-
-    use super::*;
-
     #[tokio::test]
     async fn api_anilist_get_test() {
         let name = "Naruto";

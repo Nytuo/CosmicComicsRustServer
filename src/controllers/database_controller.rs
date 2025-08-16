@@ -4,6 +4,7 @@ use axum::{extract::State, response::IntoResponse};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
+use tracing::{debug, error, info};
 
 use crate::{
     repositories::database_repo::insert_into_db, routes_manager::AppState,
@@ -70,11 +71,12 @@ pub async fn insert_db(
     .await
     {
         Ok(_) => {
-            println!("Inserted into DB: {} {}", db_info, values);
+            debug!("Inserted into DB: {} {}", db_info, values);
+            info!("Insertion successful for {}", db_info);
             (StatusCode::OK, "Insert successful").into_response()
         }
         Err(error_msg) => {
-            eprintln!("Failed to insert into DB: {}", error_msg);
+            error!("Failed to insert into DB: {}", error_msg);
             (StatusCode::INTERNAL_SERVER_ERROR, "Insert failed").into_response()
         }
     }
@@ -91,14 +93,14 @@ pub async fn write_db(
     let json_file = json_file.replace("'", "''").replace("\"", "\\\"");
     let json_file_path = format!("{}/{}.json", base_path, json_file);
     let json_data = serde_json::to_string_pretty(&payload).unwrap_or_else(|_| {
-        eprintln!("Failed to serialize JSON");
+        error!("Failed to serialize JSON");
         "Serialization failed".to_string()
     });
-    std::fs::write(&json_file_path, json_data).unwrap_or_else(|_| {
-        eprintln!("Failed to write to file");
-        (StatusCode::INTERNAL_SERVER_ERROR, "File write failed").into_response();
-    });
-    println!("Wrote to file: {}", json_file_path);
+    if let Err(_) = std::fs::write(&json_file_path, json_data) {
+        error!("Failed to write to file");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "File write failed").into_response();
+    }
+    info!("Write to file successful: {}", json_file_path);
     (StatusCode::OK, "Write successful").into_response()
 }
 
@@ -112,10 +114,10 @@ pub async fn read_db(
     let json_file = json_file.replace("'", "''").replace("\"", "\\\"");
     let json_file_path = format!("{}/{}.json", base_path, json_file);
     let json_data = std::fs::read_to_string(&json_file_path).unwrap_or_else(|_| {
-        eprintln!("Failed to read file");
+        error!("Failed to read file");
         "File read failed".to_string()
     });
-    println!("Read from file: {}", json_file_path);
+    info!("Read from file successful: {}", json_file_path);
     (StatusCode::OK, json_data).into_response()
 }
 
@@ -158,16 +160,20 @@ pub async fn update_db(
     let col_vec = vec![col_name.clone()];
     let val_vec = vec![value.clone()];
 
-    crate::repositories::database_repo::update_db(
+    if let Err(_) = crate::repositories::database_repo::update_db(
         &pool, "no_edit", col_vec, val_vec, &db_name, "ID_book", &id,
     )
     .await
-    .unwrap_or_else(|_| {
-        eprintln!("Failed to update DB");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
-    });
+    {
+        error!("Failed to update DB");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
+    }
 
-    println!("Updated DB: {} {} {} {}", db_name, col_name, value, id);
+    debug!("Updated DB: {} {} {} {}", db_name, col_name, value, id);
+    info!(
+        "Updated DB: {} of: {} for: {} successful",
+        db_name, col_name, id
+    );
     (StatusCode::OK, "Update successful").into_response()
 }
 
@@ -187,12 +193,10 @@ pub async fn update_db_body(
         None => return (StatusCode::UNAUTHORIZED, "Invalid token").into_response(),
     };
 
-    println!("payload: {:?}", payload);
+    debug!("payload: {:?}", payload);
 
     let type_name = payload["type"].as_str().unwrap_or_default();
     let db_name = payload["table"].as_str().unwrap_or_default();
-    let columns = payload["column"].as_array().unwrap_or(&vec![]);
-    let values = payload["value"].as_array().unwrap_or(&vec![]);
     let where_ = payload["where"].as_str().unwrap_or_default();
     let where_value = payload["whereEl"].as_str().unwrap_or_default();
 
@@ -233,7 +237,7 @@ pub async fn update_db_body(
         }]
     };
 
-    crate::repositories::database_repo::update_db(
+    if let Err(e) = crate::repositories::database_repo::update_db(
         &pool,
         type_name,
         columns,
@@ -243,11 +247,12 @@ pub async fn update_db_body(
         &where_value,
     )
     .await
-    .unwrap_or_else(|e| {
-        eprintln!("Failed to update DB: {}", e);
-        (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
-    });
+    {
+        error!("Failed to update DB: {}", e);
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
+    }
 
+    info!("Update successful");
     (StatusCode::OK, "Update successful").into_response()
 }
 
@@ -267,9 +272,9 @@ pub async fn update_db_one_for_all(
         None => return (StatusCode::UNAUTHORIZED, "Invalid token").into_response(),
     };
 
-    let W1 = payload["W1"].as_str().unwrap_or_default();
-    let W2 = payload["W2"].as_str().unwrap_or_default();
-    let A = payload["A"].as_str().unwrap_or_default();
+    let payload_w1 = payload["W1"].as_str().unwrap_or_default();
+    let payload_w2 = payload["W2"].as_str().unwrap_or_default();
+    let payload_a = payload["A"].as_str().unwrap_or_default();
     let title = payload["title"].as_str().unwrap_or_default();
 
     let pool = match crate::repositories::database_repo::get_db(
@@ -287,13 +292,13 @@ pub async fn update_db_one_for_all(
         &pool,
         "Books",
         vec!["*".to_string()],
-        Some(vec![&*W1.to_string(), &*W2.to_string()]),
+        Some(vec![&*payload_w1.to_string(), &*payload_w2.to_string()]),
         Some(vec!["1", "1"]),
         Some("OR"),
     )
     .await
     .unwrap_or_else(|_| {
-        eprintln!("Failed to select from DB");
+        error!("Failed to select from DB");
         Vec::new()
     });
 
@@ -308,9 +313,9 @@ pub async fn update_db_one_for_all(
             .replace('"', "");
         if path.to_lowercase().contains(&en_title) {
             let asso = json!({
-                A: 1,
-                W1: 0,
-                W2: 0
+                payload_a: 1,
+                payload_w1: 0,
+                payload_w2: 0
             });
             let columns = asso
                 .as_object()
@@ -325,7 +330,8 @@ pub async fn update_db_one_for_all(
                 .cloned()
                 .collect::<Vec<_>>();
             let values_vec_string = values.iter().map(|v| v.to_string()).collect::<Vec<_>>();
-            crate::repositories::database_repo::update_db(
+
+            if let Err(_) = crate::repositories::database_repo::update_db(
                 &pool,
                 "edit",
                 columns,
@@ -335,14 +341,17 @@ pub async fn update_db_one_for_all(
                 path.as_str(),
             )
             .await
-            .unwrap_or_else(|_| {
-                eprintln!("Failed to update DB");
-                (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
-            });
+            {
+                error!("Failed to update DB");
+                return (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
+            }
         }
     }
 
-    println!("Updated DB: {} {} {} {}", W1, W2, A, title);
+    info!(
+        "Updated DB: {} {} {} {}",
+        payload_w1, payload_w2, payload_a, title
+    );
     (StatusCode::OK, "Update successful").into_response()
 }
 
@@ -378,8 +387,7 @@ pub async fn update_lib(
 
     let col_vec = vec!["NAME".to_string(), "PATH".to_string(), "API_ID".to_string()];
     let val_vec = vec![name.to_string(), path.to_string(), api.to_string()];
-
-    crate::repositories::database_repo::update_db(
+    if let Err(_) = crate::repositories::database_repo::update_db(
         &pool,
         "no_edit",
         col_vec,
@@ -389,12 +397,12 @@ pub async fn update_lib(
         &id,
     )
     .await
-    .unwrap_or_else(|_| {
-        eprintln!("Failed to update library");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
-    });
+    {
+        error!("Failed to update library");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Update failed").into_response();
+    }
 
-    println!("Updated library: {}", id);
+    info!("Updated library: {}", id);
     (StatusCode::OK, "Update successful").into_response()
 }
 
@@ -431,8 +439,7 @@ pub async fn delete_db(
         Ok(pool) => pool,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get DB").into_response(),
     };
-
-    crate::repositories::database_repo::delete_from_db(
+    if let Err(_) = crate::repositories::database_repo::delete_from_db(
         &pool,
         &db_name,
         "ID_book",
@@ -440,12 +447,12 @@ pub async fn delete_db(
         Some(&*option.clone()),
     )
     .await
-    .unwrap_or_else(|_| {
-        eprintln!("Failed to delete from DB");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Delete failed").into_response();
-    });
+    {
+        error!("Failed to delete from DB");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Delete failed").into_response();
+    }
 
-    println!("Deleted from DB: {} {}", db_name, id);
+    info!("Deleted from DB: {} {}", db_name, id);
     (StatusCode::OK, "Delete successful").into_response()
 }
 
@@ -476,8 +483,7 @@ pub async fn true_delete_db(
         Ok(pool) => pool,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get DB").into_response(),
     };
-
-    crate::repositories::database_repo::delete_from_db(
+    if let Err(_) = crate::repositories::database_repo::delete_from_db(
         &pool,
         &db_name,
         "ID_book",
@@ -485,12 +491,12 @@ pub async fn true_delete_db(
         Option::None,
     )
     .await
-    .unwrap_or_else(|_| {
-        eprintln!("Failed to true delete from DB");
-        (StatusCode::INTERNAL_SERVER_ERROR, "True delete failed").into_response();
-    });
+    {
+        error!("Failed to true delete from DB");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "True delete failed").into_response();
+    }
 
-    println!("True deleted from DB: {} {}", db_name, id);
+    info!("True deleted from DB: {} {}", db_name, id);
     (StatusCode::OK, "True delete successful").into_response()
 }
 
@@ -520,8 +526,7 @@ pub async fn delete_lib(
         Ok(pool) => pool,
         Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to get DB").into_response(),
     };
-
-    crate::repositories::database_repo::delete_from_db(
+    if let Err(_) = crate::repositories::database_repo::delete_from_db(
         &pool,
         "Libraries",
         "ID_LIBRARY",
@@ -529,18 +534,18 @@ pub async fn delete_lib(
         Option::None,
     )
     .await
-    .unwrap_or_else(|_| {
-        eprintln!("Failed to delete from library");
-        (StatusCode::INTERNAL_SERVER_ERROR, "Delete failed").into_response();
-    });
+    {
+        error!("Failed to delete from library");
+        return (StatusCode::INTERNAL_SERVER_ERROR, "Delete failed").into_response();
+    }
 
-    println!("Deleted from library: {}", id);
+    info!("Deleted from library: {}", id);
     (StatusCode::OK, "Delete successful").into_response()
 }
 
 pub async fn get_db(
     State(state): State<Arc<Mutex<AppState>>>,
-    axum::extract::Path((token, dbName)): axum::extract::Path<(String, String)>,
+    axum::extract::Path((token, db_name)): axum::extract::Path<(String, String)>,
     axum::extract::Json(payload): axum::extract::Json<Value>,
 ) -> impl IntoResponse {
     let state = state.lock().await;
@@ -569,11 +574,11 @@ pub async fn get_db(
     let result = crate::repositories::database_repo::select_from_db_with_options(&pool, request)
         .await
         .unwrap_or_else(|_| {
-            eprintln!("Failed to select from DB");
+            error!("Failed to select from DB");
             Vec::new()
         });
 
-    println!("Selected from DB: {} {}", dbName, request);
+    info!("Selected from DB: {} {}", db_name, request);
     match serde_json::to_string(&result) {
         Ok(json_result) => (StatusCode::OK, json_result).into_response(),
         Err(_) => (

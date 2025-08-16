@@ -1,15 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
-    use std::collections::HashMap;
+    use crate::services::book_service::{fill_blank_images, get_books_with_blank_covers};
+    use sqlx::sqlite::SqlitePoolOptions;
     use std::fs;
     use std::io::Write;
-    use std::sync::Arc;
     use tempfile::tempdir;
-    use tokio::sync::Mutex;
     use zip::write::FileOptions;
-    use crate::AppGlobalVariables;
-    use crate::services::book_service::{fill_blank_images, get_books_with_blank_covers};
 
     #[tokio::test]
     async fn test_get_books_with_blank_covers_returns_expected() {
@@ -71,7 +67,6 @@ mod tests {
     async fn test_fill_blank_images_with_valid_extensions() {
         let temp = tempdir().unwrap();
         let extract_dir = temp.path().join("out");
-        let progress = Arc::new(Mutex::new(AppGlobalVariables::default()));
 
         let zip_path = temp.path().join("test.cbz");
         {
@@ -104,6 +99,13 @@ mod tests {
 
         let valid_exts = ["jpg", "jpeg", "png"];
 
-        let result = fill_blank_images(db.clone(), &valid_exts, Option::from(extract_dir.to_string_lossy().to_string())).await;
+        let result = fill_blank_images(
+            db.clone(),
+            &valid_exts,
+            Option::from(extract_dir.to_string_lossy().to_string()),
+        )
+        .await;
+
+        assert!(result.is_ok());
     }
 }

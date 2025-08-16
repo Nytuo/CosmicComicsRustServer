@@ -22,6 +22,6 @@ pub fn database_routes(state: Arc<tokio::sync::Mutex<AppState>>) -> Router {
             get(true_delete_db),
         )
         .route("/DB/lib/delete/{token}/{id}", get(delete_lib))
-        .route("/DB/get/{token}/{dbName}", post(get_db))
+        .route("/DB/get/{token}/{db_name}", post(get_db))
         .with_state(state)
 }

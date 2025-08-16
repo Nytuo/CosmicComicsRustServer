@@ -19,7 +19,7 @@ mod tests {
         let volume = get_gbapi_comics_by_id(id).await?;
 
         assert_eq!(volume.id, id);
-        assert!(!volume.volumeInfo.title.is_empty());
+        assert!(!volume.volume_info.title.is_empty());
         Ok(())
     }
 
