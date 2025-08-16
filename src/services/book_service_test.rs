@@ -73,8 +73,14 @@ mod tests {
             let mut zip = zip::ZipWriter::new(fs::File::create(&zip_path).unwrap());
             let options: zip::write::FileOptions<()> =
                 FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+            let image_path = format!(
+                "{}/public/Images/fileDefault.png",
+                env!("CARGO_MANIFEST_DIR")
+            );
+            let image_bytes = std::fs::read(&image_path)
+                .expect(&format!("Image file not found at {}", image_path));
             zip.start_file("img.jpg", options).unwrap();
-            zip.write_all(b"fakeimage").unwrap();
+            zip.write_all(&image_bytes).unwrap();
             zip.finish().unwrap();
         }
 

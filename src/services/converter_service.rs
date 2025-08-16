@@ -4,7 +4,9 @@ use sqlx::SqlitePool;
 use webp::Encoder;
 
 fn convert_to_webp(input_path: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let img = ImageReader::open(input_path)?.decode()?;
+    println!("Converting {}", input_path);
+    let reader = ImageReader::open(&input_path)?.with_guessed_format()?;
+    let img = reader.decode()?;
     let rgb_img = img.to_rgb8();
     let (width, height) = rgb_img.dimensions();
     let encoder = Encoder::from_rgb(&rgb_img, width, height);
@@ -44,6 +46,5 @@ pub async fn convert_all_images_in_directory(
             }
         }
     }
-
     Ok(())
 }
