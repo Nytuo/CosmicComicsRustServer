@@ -388,7 +388,7 @@ pub async fn handle_google_book(
         .fetch_one(pool)
         .await?;
     let path: String = row.try_get("PATH")?;
-    let regex = Regex::new(r"(\d+)_\d+").unwrap();
+    let regex = Regex::new(r"([^_]+)_\d+").unwrap();
     let sanitized_id = regex.replace_all(&id, "$1").to_string();
     let res = get_gbapi_comics_by_id(&sanitized_id)
         .await
