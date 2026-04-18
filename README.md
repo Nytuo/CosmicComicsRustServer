@@ -1,6 +1,10 @@
+> [!NOTE]
+> **This repository has been archived.**   
+> The main application is still actively developed and maintained. Please visit the [main repo](https://github.com/Nytuo/CosmicComics) for the latest updates, issues, and releases.
+
 <h1 align="center">
   <a href="https://github.com/Nytuo/CosmicComics">
-    <img src="https://nytuo.fr/images/LogoStretch_cc.png" alt="Logo" width="auto" height="100">
+    <img src="https://pocket.nytuo.fr/api/files/gpmjfgb6ve1gr0u/coxm84pd6nvqn4y/logo_cc_iNZpB7U096.png" alt="Logo" width="auto" height="100">
   </a>
 </h1>
 <div align="center">
